@@ -7,6 +7,16 @@ from torch.optim.lr_scheduler import ExponentialLR
 from models import RED_GNN_trans
 from models_sheaf_momentum import SheafMomentumREDGNN
 from utils import cal_ranks, cal_performance, PeakRSSMonitor, get_cuda_peak_memory_bytes, write_memory_report
+try:
+    from tqdm import tqdm
+except ImportError:
+    tqdm = None
+
+
+def progress_iter(iterator, desc, disable=False):
+    if tqdm is None or disable:
+        return iterator
+    return tqdm(iterator, desc=desc, leave=False)
 
 class BaseModel(object):
     def __init__(self, args, loader):
@@ -53,7 +63,7 @@ class BaseModel(object):
 
         t_time = time.time()
         self.model.train()
-        for i in range(n_batch):
+        for i in progress_iter(range(n_batch), desc=f"train epoch {epoch}", disable=False):
             start = i*batch_size
             end = min(self.loader.n_train, (i+1)*batch_size)
             batch_idx = np.arange(start, end)
@@ -107,7 +117,7 @@ class BaseModel(object):
         ranking = []
         self.model.eval()
         i_time = time.time()
-        for i in range(n_batch):
+        for i in progress_iter(range(n_batch), desc=f"valid epoch {epoch}", disable=False):
             start = i*batch_size
             end = min(n_data, (i+1)*batch_size)
             batch_idx = np.arange(start, end)
@@ -131,7 +141,7 @@ class BaseModel(object):
         n_batch = n_data // batch_size + (n_data % batch_size > 0)
         ranking = []
         self.model.eval()
-        for i in range(n_batch):
+        for i in progress_iter(range(n_batch), desc=f"test epoch {epoch}", disable=False):
             start = i*batch_size
             end = min(n_data, (i+1)*batch_size)
             batch_idx = np.arange(start, end)

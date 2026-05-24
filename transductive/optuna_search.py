@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import random
+import shlex
 from types import SimpleNamespace
 
 import numpy as np
@@ -237,8 +238,13 @@ def load_initial_params(source):
     if not source:
         return []
     text = source.strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in ("'", '"'):
+        text = text[1:-1]
     if text.startswith("{") or text.startswith("["):
-        payload = json.loads(text)
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            payload = parse_cmd_flat_object(text)
     else:
         with open(source, "r", encoding="utf-8") as f:
             payload = json.load(f)
@@ -249,6 +255,59 @@ def load_initial_params(source):
     raise ValueError(
         "--init_params must be a JSON object, a list of JSON objects, or a JSON file path."
     )
+
+
+def parse_cmd_flat_object(value):
+    text = value.strip()
+    if not (text.startswith("{") and text.endswith("}")):
+        raise ValueError(f"Invalid inline JSON: {value}")
+    body = text[1:-1].strip()
+    if not body:
+        return {}
+
+    result = {}
+    for item in body.split(","):
+        if ":" not in item:
+            raise ValueError(f"Invalid initial parameter item: {item}")
+        key, raw_value = item.split(":", 1)
+        key = key.strip().strip("'\"")
+        result[key] = parse_cmd_value(raw_value.strip())
+    return result
+
+
+def parse_cmd_value(value):
+    value = value.strip().strip("'\"")
+    lower = value.lower()
+    if lower == "true":
+        return True
+    if lower == "false":
+        return False
+    if lower == "null":
+        return None
+    try:
+        if any(ch in value for ch in [".", "e", "E"]):
+            return float(value)
+        return int(value)
+    except ValueError:
+        return value
+
+
+def command_to_string(args, params):
+    cmd = [
+        "python",
+        "train.py",
+        "--data_path",
+        args.data_path,
+        "--model_name",
+        args.model_name,
+        "--gpu",
+        str(args.gpu if args.gpu is not None else 0),
+    ]
+    for key, value in params.items():
+        cmd.extend([f"--{key}", str(value)])
+    if os.name == "nt":
+        return " ".join(shlex.quote(str(item)) for item in cmd)
+    return shlex.join(str(item) for item in cmd)
 
 
 def make_objective(args, dataset):
@@ -262,6 +321,11 @@ def make_objective(args, dataset):
         params = suggest_fn(trial)
         if args.model_name == "sheaf_momentum":
             params = sheaf_suggest_fn(trial, params)
+        trial.set_user_attr("params", params)
+        print(f"\n==> Trial {trial.number} command:", flush=True)
+        print(command_to_string(args, params), flush=True)
+        print(f"==> Trial {trial.number} params: {json.dumps(params, sort_keys=True)}", flush=True)
+
         loader = DataLoader(args.data_path, fact_ratio=params["fact_ratio"])
         opts = build_options(params, loader, args, dataset, trial.number)
 
@@ -273,6 +337,7 @@ def make_objective(args, dataset):
 
         for epoch in range(args.max_epochs_per_trial):
             valid_mrr, out_str = model.train_batch(epoch=epoch)
+            print(out_str, end="", flush=True)
             with open(opts.perf_file, "a+", encoding="utf-8") as f:
                 f.write(out_str)
             if valid_mrr > best_mrr:
@@ -286,11 +351,17 @@ def make_objective(args, dataset):
             trial.set_user_attr("best_epoch", best_epoch)
             trial.set_user_attr("best_log", best_log)
             trial.set_user_attr("stale_epochs", stale_epochs)
+            print(
+                f"==> Trial {trial.number} epoch {epoch} "
+                f"best_mrr={best_mrr:.4f} best_epoch={best_epoch} "
+                f"stale={stale_epochs}/{args.early_stop_patience}",
+                flush=True,
+            )
             if stale_epochs >= args.early_stop_patience:
                 trial.set_user_attr("early_stopped", True)
+                print(f"==> Trial {trial.number} early stopped by patience.", flush=True)
                 break
 
-        trial.set_user_attr("params", params)
         return best_mrr
 
     return objective
