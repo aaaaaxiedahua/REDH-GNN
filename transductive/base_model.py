@@ -5,11 +5,18 @@ import time
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ExponentialLR
 from models import RED_GNN_trans
+from models_sheaf_momentum import SheafMomentumREDGNN
 from utils import cal_ranks, cal_performance, PeakRSSMonitor, get_cuda_peak_memory_bytes, write_memory_report
 
 class BaseModel(object):
     def __init__(self, args, loader):
-        self.model = RED_GNN_trans(args, loader)
+        model_name = getattr(args, 'model_name', 'redgnn')
+        if model_name == 'sheaf_momentum':
+            self.model = SheafMomentumREDGNN(args, loader)
+        elif model_name == 'redgnn':
+            self.model = RED_GNN_trans(args, loader)
+        else:
+            raise ValueError(f"Unknown model_name: {model_name}")
         self.model.cuda()
 
         self.loader = loader
@@ -58,6 +65,8 @@ class BaseModel(object):
             pos_scores = scores[[torch.arange(len(scores)).cuda(),torch.LongTensor(triple[:,2]).cuda()]]
             max_n = torch.max(scores, 1, keepdim=True)[0]
             loss = torch.sum(- pos_scores + max_n + torch.log(torch.sum(torch.exp(scores - max_n),1))) 
+            if hasattr(self.model, 'extra_loss'):
+                loss = loss + self.model.extra_loss
             loss.backward()
             self.optimizer.step()
 

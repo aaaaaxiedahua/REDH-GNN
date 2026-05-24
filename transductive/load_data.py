@@ -5,8 +5,9 @@ import numpy as np
 from collections import defaultdict
 
 class DataLoader:
-    def __init__(self, task_dir):
+    def __init__(self, task_dir, fact_ratio=0.75):
         self.task_dir = task_dir
+        self.fact_ratio = fact_ratio
 
         with open(os.path.join(task_dir, 'entities.txt')) as f:
             self.entity2id = dict()
@@ -39,6 +40,8 @@ class DataLoader:
         self.train_data = np.array(self.double_triple(self.train_triple))
         self.valid_data = self.double_triple(self.valid_triple)
         self.test_data  = self.double_triple(self.test_triple)
+
+        self.shuffle_train()
 
         self.load_graph(self.fact_data)
         self.load_test_graph(self.double_triple(self.fact_triple)+self.double_triple(self.train_triple))
@@ -149,7 +152,12 @@ class DataLoader:
             objs[i][answer[batch_idx[i]]] = 1
         return subs, rels, objs
 
-    def shuffle_train(self,):
+    def shuffle_train(self, fact_ratio=None):
+        if fact_ratio is not None:
+            self.fact_ratio = fact_ratio
+        if not 0.0 < self.fact_ratio < 1.0:
+            raise ValueError(f"fact_ratio must be in (0, 1), got {self.fact_ratio}")
+
         fact_triple = np.array(self.fact_triple)
         train_triple = np.array(self.train_triple)
         all_triple = np.concatenate([fact_triple, train_triple], axis=0)
@@ -158,8 +166,10 @@ class DataLoader:
         all_triple = all_triple[rand_idx]
 
         # increase the ratio of fact_data, e.g., 3/4->4/5, can increase the performance
-        self.fact_data = self.double_triple(all_triple[:n_all*3//4].tolist())
-        self.train_data = np.array(self.double_triple(all_triple[n_all*3//4:].tolist()))
+        n_fact = int(n_all * self.fact_ratio)
+        n_fact = min(max(n_fact, 1), n_all - 1)
+        self.fact_data = self.double_triple(all_triple[:n_fact].tolist())
+        self.train_data = np.array(self.double_triple(all_triple[n_fact:].tolist()))
         self.n_train = len(self.train_data)
         self.load_graph(self.fact_data)
 
