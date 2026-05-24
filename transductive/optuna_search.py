@@ -332,6 +332,8 @@ def main():
 
     set_seed(args.seed)
     gpu = args.gpu if args.gpu is not None else select_gpu()
+    if gpu is None:
+        gpu = 0
     torch.cuda.set_device(gpu)
     print("gpu:", gpu)
     print("study_name:", study_name)
