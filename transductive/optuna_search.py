@@ -233,16 +233,22 @@ def build_options(params, loader, args, dataset, trial_number):
     )
 
 
-def load_initial_params(path):
-    if not path:
+def load_initial_params(source):
+    if not source:
         return []
-    with open(path, "r", encoding="utf-8") as f:
-        payload = json.load(f)
+    text = source.strip()
+    if text.startswith("{") or text.startswith("["):
+        payload = json.loads(text)
+    else:
+        with open(source, "r", encoding="utf-8") as f:
+            payload = json.load(f)
     if isinstance(payload, dict):
         return [payload]
     if isinstance(payload, list):
         return payload
-    raise ValueError("--init_params must be a JSON object or a list of JSON objects.")
+    raise ValueError(
+        "--init_params must be a JSON object, a list of JSON objects, or a JSON file path."
+    )
 
 
 def make_objective(args, dataset):
@@ -263,6 +269,7 @@ def make_objective(args, dataset):
         best_mrr = 0.0
         best_epoch = -1
         best_log = ""
+        stale_epochs = 0
 
         for epoch in range(args.max_epochs_per_trial):
             valid_mrr, out_str = model.train_batch(epoch=epoch)
@@ -272,9 +279,16 @@ def make_objective(args, dataset):
                 best_mrr = float(valid_mrr)
                 best_epoch = epoch
                 best_log = out_str
+                stale_epochs = 0
+            else:
+                stale_epochs += 1
             trial.set_user_attr("last_epoch", epoch)
             trial.set_user_attr("best_epoch", best_epoch)
             trial.set_user_attr("best_log", best_log)
+            trial.set_user_attr("stale_epochs", stale_epochs)
+            if stale_epochs >= args.early_stop_patience:
+                trial.set_user_attr("early_stopped", True)
+                break
 
         trial.set_user_attr("params", params)
         return best_mrr
@@ -289,9 +303,15 @@ def parse_args():
     parser.add_argument("--storage", type=str, default=None)
     parser.add_argument("--n_trials", type=int, default=30)
     parser.add_argument("--max_epochs_per_trial", type=int, default=10)
+    parser.add_argument("--early_stop_patience", type=int, default=10)
     parser.add_argument("--seed", type=int, default=1234)
     parser.add_argument("--gpu", type=int, default=None)
-    parser.add_argument("--init_params", type=str, default=None)
+    parser.add_argument(
+        "--init_params",
+        type=str,
+        default=None,
+        help="Initial parameter group as inline JSON or a JSON file path.",
+    )
     parser.add_argument("--results_dir", type=str, default="results/optuna")
     parser.add_argument("--write_mem", action="store_true")
     parser.add_argument("--model_name", type=str, default="redgnn", choices=["redgnn", "sheaf_momentum"])
