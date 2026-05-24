@@ -137,9 +137,9 @@ class DataLoader:
         if data=='train':
             return np.array(self.train_data)[batch_idx]
         if data=='valid':
-            query, answer = np.array(self.valid_q), np.array(self.valid_a)
+            query, answer = np.array(self.valid_q), self.valid_a
         if data=='test':
-            query, answer = np.array(self.test_q), np.array(self.test_a)
+            query, answer = np.array(self.test_q), self.test_a
 
         subs = []
         rels = []
