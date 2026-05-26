@@ -234,6 +234,27 @@ def build_options(params, loader, args, dataset, trial_number):
     )
 
 
+def build_trial_config(params, args, dataset, trial_number, trial_seed, gpu):
+    return {
+        "trial_number": trial_number,
+        "study_name": args.study_name,
+        "dataset": dataset,
+        "data_path": args.data_path,
+        "model_name": args.model_name,
+        "seed": args.seed,
+        "trial_seed": trial_seed,
+        "gpu": gpu,
+        "max_epochs_per_trial": args.max_epochs_per_trial,
+        "early_stop_patience": args.early_stop_patience,
+        "params": params,
+    }
+
+
+def write_config_header(path, config):
+    with open(path, "a+", encoding="utf-8") as f:
+        f.write("[CONFIG] " + json.dumps(config, sort_keys=True) + "\n")
+
+
 def load_initial_params(source):
     if not source:
         return []
@@ -328,6 +349,17 @@ def make_objective(args, dataset):
 
         loader = DataLoader(args.data_path, fact_ratio=params["fact_ratio"])
         opts = build_options(params, loader, args, dataset, trial.number)
+        write_config_header(
+            opts.perf_file,
+            build_trial_config(
+                params,
+                args,
+                dataset,
+                trial.number,
+                trial_seed,
+                getattr(args, "selected_gpu", args.gpu),
+            ),
+        )
 
         model = BaseModel(opts, loader)
         best_mrr = 0.0
@@ -405,6 +437,7 @@ def main():
     gpu = args.gpu if args.gpu is not None else select_gpu()
     if gpu is None:
         gpu = 0
+    args.selected_gpu = gpu
     torch.cuda.set_device(gpu)
     print("gpu:", gpu)
     print("study_name:", study_name)

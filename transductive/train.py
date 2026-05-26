@@ -1,5 +1,6 @@
 import os
 import argparse
+import json
 import torch
 import numpy as np
 from load_data import DataLoader
@@ -8,8 +9,20 @@ from utils import select_gpu
 
 parser = argparse.ArgumentParser(description="Parser for RED-GNN")
 parser.add_argument('--data_path', type=str, default='data/family/')
-parser.add_argument('--seed', type=str, default=1234)
+parser.add_argument('--seed', type=int, default=1234)
+parser.add_argument('--gpu', type=int, default=None)
+parser.add_argument('--epoch', type=int, default=50)
 parser.add_argument('--model_name', type=str, default='redgnn', choices=['redgnn', 'sheaf_momentum'])
+parser.add_argument('--lr', type=float, default=None)
+parser.add_argument('--decay_rate', type=float, default=None)
+parser.add_argument('--lamb', type=float, default=None)
+parser.add_argument('--hidden_dim', type=int, default=None)
+parser.add_argument('--attn_dim', type=int, default=None)
+parser.add_argument('--n_layer', type=int, default=None)
+parser.add_argument('--dropout', type=float, default=None)
+parser.add_argument('--act', type=str, default=None, choices=['relu', 'tanh', 'idd'])
+parser.add_argument('--n_batch', type=int, default=None)
+parser.add_argument('--n_tbatch', type=int, default=None)
 parser.add_argument('--topk_nodes', type=int, default=0)
 parser.add_argument('--gamma', type=float, default=0.7)
 parser.add_argument('--beta', type=float, default=1.0)
@@ -22,6 +35,34 @@ args = parser.parse_args()
 
 class Options(object):
     pass
+
+
+def build_config(opts, args, dataset, gpu):
+    return {
+        'dataset': dataset,
+        'data_path': args.data_path,
+        'seed': args.seed,
+        'gpu': gpu,
+        'epoch': args.epoch,
+        'model_name': opts.model_name,
+        'fact_ratio': opts.fact_ratio,
+        'lr': opts.lr,
+        'decay_rate': opts.decay_rate,
+        'lamb': opts.lamb,
+        'hidden_dim': opts.hidden_dim,
+        'attn_dim': opts.attn_dim,
+        'n_layer': opts.n_layer,
+        'dropout': opts.dropout,
+        'act': opts.act,
+        'n_batch': opts.n_batch,
+        'n_tbatch': opts.n_tbatch,
+        'topk_nodes': opts.topk_nodes,
+        'gamma': opts.gamma,
+        'beta': opts.beta,
+        'lambda_sheaf': opts.lambda_sheaf,
+        'lambda_dyn': opts.lambda_dyn,
+    }
+
 
 if __name__ == '__main__':
     np.random.seed(args.seed)
@@ -42,7 +83,9 @@ if __name__ == '__main__':
     opts.perf_file = os.path.join(results_dir,  dataset + '_perf.txt')
     opts.mem_file  = os.path.join(results_dir,  dataset + '_mem.txt')
 
-    gpu = select_gpu()
+    gpu = args.gpu if args.gpu is not None else select_gpu()
+    if gpu is None:
+        gpu = 0
     torch.cuda.set_device(gpu)
     print('gpu:', gpu)
 
@@ -121,6 +164,11 @@ if __name__ == '__main__':
 
     if args.fact_ratio is not None:
         opts.fact_ratio = args.fact_ratio
+    for name in ['lr', 'decay_rate', 'lamb', 'hidden_dim', 'attn_dim',
+                 'n_layer', 'dropout', 'act', 'n_batch', 'n_tbatch']:
+        value = getattr(args, name)
+        if value is not None:
+            setattr(opts, name, value)
 
     loader = DataLoader(args.data_path, fact_ratio=opts.fact_ratio)
     opts.n_ent = loader.n_ent
@@ -137,14 +185,20 @@ if __name__ == '__main__':
         opts.n_layer, opts.n_batch, opts.dropout, opts.act, opts.model_name,
         opts.topk_nodes, opts.gamma, opts.beta, opts.lambda_sheaf, opts.lambda_dyn
     )
+    json_config_str = '[CONFIG] ' + json.dumps(
+        build_config(opts, args, dataset, gpu), sort_keys=True
+    ) + '\n'
     print(config_str)
+    print(json_config_str, end='')
     with open(opts.perf_file, 'a+') as f:
+        f.write(json_config_str)
         f.write(config_str)
 
     model = BaseModel(opts, loader)
 
     best_mrr = 0
-    for epoch in range(50):
+    best_str = ''
+    for epoch in range(args.epoch):
         mrr, out_str = model.train_batch(epoch=epoch)
         with open(opts.perf_file, 'a+') as f:
             f.write(out_str)
