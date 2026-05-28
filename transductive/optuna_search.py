@@ -54,8 +54,8 @@ def suggest_umls(trial):
         "n_layer": trial.suggest_int("n_layer", 4, 8),
         "dropout": trial.suggest_float("dropout", 0.0, 0.20),
         "act": trial.suggest_categorical("act", ["relu", "tanh", "idd"]),
-        "n_batch": trial.suggest_categorical("n_batch", [10, 20, 50]),
-        "n_tbatch": trial.suggest_categorical("n_tbatch", [20, 50, 100]),
+        "n_batch": trial.suggest_categorical("n_batch", [5, 10, 20]),
+        "n_tbatch": trial.suggest_categorical("n_tbatch", [20, 30, 50]),
     }
     return params
 
@@ -68,11 +68,11 @@ def suggest_wn18rr(trial):
         "lamb": trial.suggest_float("lamb", 1e-6, 2e-4, log=True),
         "hidden_dim": trial.suggest_categorical("hidden_dim", [32, 48, 64]),
         "attn_dim": trial.suggest_categorical("attn_dim", [3, 5, 8]),
-        "n_layer": trial.suggest_int("n_layer", 3, 6),
+        "n_layer": trial.suggest_int("n_layer", 4, 6),
         "dropout": trial.suggest_float("dropout", 0.0, 0.25),
         "act": trial.suggest_categorical("act", ["relu", "tanh", "idd"]),
-        "n_batch": trial.suggest_categorical("n_batch", [50, 100, 200]),
-        "n_tbatch": trial.suggest_categorical("n_tbatch", [20, 50, 100]),
+        "n_batch": trial.suggest_categorical("n_batch", [50, 80, 100]),
+        "n_tbatch": trial.suggest_categorical("n_tbatch", [30, 50, 80]),
     }
     return params
 
@@ -152,7 +152,7 @@ def add_sheaf_umls(trial, params):
 
 def add_sheaf_wn18rr(trial, params):
     params.update({
-        "topk_nodes": trial.suggest_categorical("topk_nodes", [100, 200, 500, 1000]),
+        "topk_nodes": trial.suggest_categorical("topk_nodes", [500, 800, 1000, 1200]),
         "gamma": trial.suggest_float("gamma", 0.4, 0.95),
         "beta": trial.suggest_float("beta", 0.25, 1.25),
         "lambda_sheaf": trial.suggest_float("lambda_sheaf", 1e-6, 1e-2, log=True),
