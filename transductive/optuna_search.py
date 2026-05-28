@@ -368,7 +368,20 @@ def make_objective(args, dataset):
         stale_epochs = 0
 
         for epoch in range(args.max_epochs_per_trial):
-            valid_mrr, out_str = model.train_batch(epoch=epoch)
+            try:
+                valid_mrr, out_str = model.train_batch(epoch=epoch)
+            except RuntimeError as exc:
+                if "out of memory" not in str(exc).lower():
+                    raise
+                trial.set_user_attr("oom", True)
+                trial.set_user_attr("oom_epoch", epoch)
+                trial.set_user_attr("oom_message", str(exc))
+                print(f"==> Trial {trial.number} stopped by CUDA OOM at epoch {epoch}.", flush=True)
+                try:
+                    torch.cuda.empty_cache()
+                except Exception:
+                    pass
+                return 0.0
             print(out_str, end="", flush=True)
             with open(opts.perf_file, "a+", encoding="utf-8") as f:
                 f.write(out_str)
