@@ -105,8 +105,8 @@ def suggest_nell(trial):
         "n_layer": trial.suggest_int("n_layer", 4, 6),
         "dropout": trial.suggest_float("dropout", 0.05, 0.40),
         "act": trial.suggest_categorical("act", ["relu", "tanh", "idd"]),
-        "n_batch": trial.suggest_categorical("n_batch", [3, 5, 10]),
-        "n_tbatch": trial.suggest_categorical("n_tbatch", [1, 2, 5]),
+        "n_batch": trial.suggest_categorical("n_batch", [5, 10, 20]),
+        "n_tbatch": trial.suggest_categorical("n_tbatch", [1, 5, 10, 20]),
     }
     return params
 
