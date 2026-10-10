@@ -336,7 +336,7 @@ def make_objective(args, dataset):
     sheaf_suggest_fn = SHEAF_SEARCH_SPACES[dataset]
 
     def objective(trial):
-        trial_seed = args.seed + trial.number
+        trial_seed = args.seed
         set_seed(trial_seed)
 
         params = suggest_fn(trial)

@@ -48,13 +48,13 @@
 \def\textpagefraction{.001}
 
 % Short title
-\shorttitle{STM-GNN for Multi-hop KG Reasoning}
+\shorttitle{STM-GNN for Progressive KG Reasoning}
 
 % Short author
 \shortauthors{Huan Xie and Miao Liu}  
 
 % Main title of the paper
-\title [mode = title]{STM-GNN: A Sheaf-Transport Momentum Graph Neural Network for Multi-hop Knowledge Graph Reasoning}
+\title [mode = title]{STM-GNN: Query-Conditioned Evidence Dynamics for Progressive Multi-hop Knowledge Graph Reasoning}
 
 % First author
 %
@@ -114,24 +114,24 @@
 
 % Here goes the abstract
 \begin{abstract}
-Knowledge graph reasoning aims to infer missing facts from observed relational
-structures and is essential for multi-hop inference over incomplete knowledge
-graphs. Existing graph neural reasoning methods usually propagate messages by
-simple relation-aware composition or attention-based aggregation, which may fail
-to sufficiently capture the local semantic discrepancy across heterogeneous
-relational edges. Moreover, noisy paths and irrelevant entities can be
-continuously introduced during multi-hop propagation, leading to semantic drift
-and unstable reasoning states. To address these issues, we propose STM-GNN, a
-Sheaf-Transport Momentum Graph Neural Network for multi-hop knowledge graph
-reasoning. STM-GNN introduces a query-aware sheaf transport mechanism to
-adaptively align edge-wise semantic evidence between source and target nodes,
-and designs a dual regularization strategy to preserve semantic consistency and
-smooth dynamic state evolution. Furthermore, a momentum-based update mechanism
-is incorporated to accumulate stable reasoning signals across propagation
-layers, while query-aware node selection reduces the interference of noisy
-candidates. Experimental results on benchmark knowledge graph reasoning
-datasets demonstrate that STM-GNN achieves superior or competitive performance,
-and ablation studies verify the effectiveness of its key components.
+Knowledge graph reasoning infers missing facts by propagating query-relevant
+evidence across multiple relational hops. Progressive graph neural reasoners
+reduce global computation through query-centered frontier expansion, but they
+commonly treat edge transformation, frontier construction, and layer-wise state
+updating as separate operations. Such decoupling makes it difficult to maintain
+coherent evidence when both its representation and propagation support evolve
+with reasoning depth. We propose STM-GNN, a Sheaf-Transport Momentum Graph
+Neural Network that formulates progressive multi-hop reasoning as
+query-conditioned evidence dynamics on an evolving local graph. Each STM
+transition establishes a closed evidence loop: query-conditioned sheaf
+transport aligns relation-aware evidence, the transported evidence induces the
+next propagation frontier, and momentum-coupled dynamics preserve it across
+reasoning depth. Edge-wise transport consistency and depth-wise continuity
+regularize this transition at complementary scales. By coupling how evidence is
+transformed, where it propagates, and how it persists, STM-GNN provides a
+unified reasoning process rather than independently combining message
+propagation, candidate pruning, and recurrent state updating.
+% TODO: Add a quantitative result sentence after the full evaluation is complete.
 \end{abstract}
 
 % Use if graphical abstract is present
@@ -141,17 +141,17 @@ and ablation studies verify the effectiveness of its key components.
 
 % Research highlights
 \begin{highlights}
-\item A progressive KG reasoning framework is developed from evidence transport and state evolution.
-\item Sheaf-conditioned transport models relation-query dependent edge evidence propagation.
-\item Query-guided frontier retention suppresses noisy candidate expansion.
-\item Momentum state evolution enhances stable multi-hop evidence accumulation.
+\item Progressive KG reasoning is formulated as query-conditioned evidence dynamics.
+\item Diagonal sheaf maps couple relational transport with query semantics.
+\item Transported evidence directly induces the evolving reasoning frontier.
+\item Momentum recurrence preserves evidence across reasoning depth.
 \end{highlights}
 
 
 % Keywords
 % Each keyword is seperated by \sep
 \begin{keywords}
-Knowledge graph reasoning \sep Graph neural networks \sep Sheaf transport \sep Semantic consistency \sep Momentum mechanism
+Knowledge graph reasoning \sep Progressive graph neural networks \sep Cellular sheaf \sep Evidence dynamics \sep Momentum state
 \end{keywords}
 
 \maketitle
@@ -159,69 +159,61 @@ Knowledge graph reasoning \sep Graph neural networks \sep Sheaf transport \sep S
 % Main text
 \section{Introduction}\label{sec:introduction}
 
-Knowledge graphs (KGs) represent real-world facts as relational triples and have
-become an important infrastructure for question answering, recommendation,
-semantic search, and decision support systems \citep{ji2021survey}. Since
-real-world KGs are usually incomplete, knowledge graph reasoning aims to infer
-missing facts from observed entities and relations. A typical query can be
-written as $(s,r_q,?)$, where the model needs to rank candidate entities and
-identify the answer entity under the query relation. In many practical
-scenarios, the correct answer cannot be recovered from an isolated triple alone,
-but requires multi-hop evidence involving several entities, relations, and local
-reasoning paths. Therefore, an effective KG reasoning model should capture not
-only the semantic compatibility of candidate triples, but also how query-relevant
-evidence is propagated and combined across multiple relational hops.
+Knowledge graphs (KGs) organize factual knowledge as relational triples and
+support applications such as question answering, recommendation, semantic
+search, and decision support \citep{ji2021survey}. Because real-world KGs are
+incomplete, knowledge graph completion seeks to infer missing facts from the
+observed relational structure. This paper focuses on progressive multi-hop tail
+prediction: given a query $q=(s,r_q,?)$, a model propagates relational evidence
+outward from the source entity $s$ and ranks all entities as possible answers.
+The central challenge is therefore not only to score candidate entities, but
+also to preserve query-relevant evidence while both the explored graph region
+and the entity states evolve with reasoning depth.
 
-Existing KG reasoning methods have been studied from several perspectives.
-Triple-based embedding models, such as TransE, ComplEx, ConvE, RotatE, and
-QuatE, learn scoring functions over entity and relation embeddings and have
-shown strong performance in link prediction
-\citep{bordes2013transe,trouillon2016complex,dettmers2018convolutional,
-sun2019rotate,zhang2019quaternion}. These models are efficient and scalable,
-but their reasoning process is usually implicit because triples are mainly
-scored as local facts. As a result, they are less effective at explicitly
-describing how multiple supporting facts are connected when the answer depends
-on structured multi-hop evidence. Path- and rule-based methods address this
-issue by modeling relational paths or logical rules. Representative methods such
-as DeepPath, MINERVA, Neural LP, DRUM, and RNNLogic improve interpretability by
-searching or learning compositional reasoning chains
-\citep{xiong2017deeppath,das2018minerva,yang2017neurallp,
-sadeghian2019drum,qu2020rnnlogic}. However, path-based reasoning is often
-limited by sparse rewards, expensive search, or sequential path structures that
-cannot fully capture richer local graph evidence.
+Existing approaches provide complementary views of this challenge. Knowledge
+graph embedding models learn entity--relation compatibility functions, but the
+multi-hop evidence underlying a prediction is usually implicit
+\citep{bordes2013transe,trouillon2016complex,sun2019rotate}. Rule- and path-based
+methods expose compositional reasoning chains, although rule coverage,
+sequential search, and sparse learning signals can restrict the evidence they
+recover \citep{xiong2017deeppath,das2018minerva,yang2017neurallp,
+sadeghian2019drum,qu2020rnnlogic}. Recent reinforcement-learning reasoners have
+improved path decisions using dynamic query context, neighborhood information,
+and relation semantics \citep{shang2024attention,wang2025losa}. GNN reasoners
+take a different route by aggregating multiple relational paths within a shared
+graph computation, making them well suited to combining distributed evidence
+\citep{schlichtkrull2018modeling,vashishth2019composition}.
 
-Graph neural networks (GNNs) provide a natural way to exploit local graph
-structures through iterative message passing \citep{gilmer2017neural}. Early
-multi-relational GNN models, including R-GCN and CompGCN, extend graph
-convolution to knowledge graphs by aggregating relation-aware neighbor
-information \citep{schlichtkrull2018modeling,vashishth2019composition}.
-However, full-neighborhood propagation may introduce irrelevant neighbors and
-can suffer from over-smoothing when the number of propagation layers increases.
-More recent reasoning-oriented models, such as NBFNet and RED-GNN, follow a
-progressive query-centered propagation paradigm: they start from the query
-entity and expand the reasoning frontier layer by layer, which avoids
-unnecessary full-graph aggregation and better preserves query-dependent local
-evidence \citep{zhu2021neural,zhang2022knowledge}. Recent studies further
-indicate that the propagation process itself should be semantically controlled
-rather than treated as a fixed aggregation procedure \citep{cao2024diffusione}.
+Progressive and adaptive GNN reasoners make this graph computation dependent on
+the query. NBFNet and RED-GNN recursively aggregate relational evidence from the
+query source, while DPMPN constructs an input-dependent subgraph
+\citep{zhu2021neural,zhang2022knowledge,xu2019dpmpn}. AdaProp learns a
+query-aware distribution for retaining promising entities, A*Net learns
+priorities for selecting important nodes and edges, and DiffusionE controls
+query-relevant message flow through a diffusion formulation
+\citep{zhang2022adaprop,zhu2023astarnet,cao2024diffusione}. These advances
+substantially improve the relevance and scalability of multi-hop propagation by
+replacing indiscriminate global aggregation with an evolving local propagation
+support.
 
-Although progressive GNN reasoners have achieved promising results, there remain
-three limitations that affect the quality and stability of multi-hop reasoning.
-Fig.~\ref{fig:motivation} illustrates a typical case where a correct multi-hop
-evidence path and a noisy expansion path coexist during query-centered
-propagation. First, edge-wise semantic transport is still relatively coarse.
-Most existing models compose source-node states with relation embeddings in a
-shared feature space, but they do not explicitly model the local semantic
-discrepancy between the source and target sides of heterogeneous relational
-edges. Second, multi-hop propagation may suffer from semantic drift. As shown in
-Fig.~\ref{fig:motivation}, a noisy branch may be introduced from an intermediate
-entity and eventually lead to an incorrect candidate, thereby diluting the
-correct evidence path and propagating errors to deeper layers. Third,
-cross-layer reasoning states can be unstable. Current-layer messages may
-overwrite useful historical evidence, making the reasoning direction fluctuate
-across propagation layers. These limitations suggest that multi-hop KG
-reasoning requires joint modeling of edge-level semantic transport, propagation
-consistency, and stable state evolution.
+Despite these advances, most progressive reasoners adapt where evidence
+propagates through scalar attention, sampling probabilities, or priority scores,
+while relational transformation and depth-wise state evolution are modeled
+through separate representations. Their routing and state updates are therefore
+connected only indirectly, without a shared evidence interface that jointly
+determines what relational evidence means, where it should propagate, and how
+it should persist as the active support evolves.
+
+This observation leads to the \emph{coupled evidence evolution problem}. In
+progressive reasoning, edge transport, support evolution, and depth-wise state
+evolution should form a closed transition: a change in edge transport should
+alter which candidates remain active; the retained evidence should determine
+the subsequent state displacement; and the evolved state should condition
+transport at the next reasoning depth. Fig.~\ref{fig:motivation} illustrates one
+observable consequence of missing this coordination: weakly related evidence
+can survive frontier expansion and accumulate along a noisy branch. Such noise
+is therefore a symptom of a broader problem involving how evidence is
+represented, routed, and retained over depth.
 
 \begin{figure}[pos=h,width=0.78\linewidth,align=\centering]
 \includegraphics[width=\figwidth]{figs/motivation.png}
@@ -234,32 +226,55 @@ drift during multi-hop propagation.}
 \end{figure}
 \FloatBarrier
 
-To address these issues, we propose STM-GNN, a Sheaf-Transport Momentum Graph
-Neural Network for multi-hop knowledge graph reasoning. Inspired by neural sheaf
-diffusion \citep{bodnar2022neural}, STM-GNN introduces query-aware sheaf
-transport to learn local source-side and target-side semantic transformations
-for relation-sensitive message passing. To reduce semantic drift during
-propagation, STM-GNN further uses a dual regularization strategy that constrains
-both sheaf semantic consistency and dynamic state smoothness. In addition,
-motivated by momentum-style state evolution in neural architectures and
-second-order dynamic graph models \citep{sander2021momentum,rusch2022graphcon},
-STM-GNN incorporates an explicit momentum state to preserve a smoothed trace of
-historical reasoning signals. Query-aware node selection is also used to reduce
-the interference of noisy candidates during layer-wise expansion.
+To address this problem, we propose STM-GNN, a Sheaf-Transport Momentum Graph
+Neural Network that models progressive reasoning as query-conditioned evidence
+dynamics. At each depth, query-conditioned diagonal sheaf restrictions align
+relation-aware source evidence with the target-side coordinates of an expanded
+edge. The resulting transported evidence is the shared transition variable: its
+preview aggregation scores newly reached entities and induces the next active
+frontier, while its retained part forms the driving signal for a momentum
+recurrence over the hidden states. The evolved hidden and momentum states then
+condition transport at the next depth. STM-GNN therefore establishes a closed
+reasoning transition in which evidence transformation, support evolution, and
+depth-wise memory are coordinated through the same evidence flow rather than
+appended as independent processing stages.
+
+The transition is regularized at two complementary scales. Edge-level transport
+consistency aligns the source evidence with the target update in a common edge
+stalk, while depth-level continuity stabilizes the momentum trajectory across
+successive reasoning steps. Together, they preserve relational compatibility
+and depth-wise coherence within the same STM transition. The formulation
+connects sheaf-based local alignment and knowledge representation
+\citep{bodnar2022neural,barbero2022sheaf,gebhart2023knowledge} with second-order
+neural state dynamics \citep{sander2021momentum,rusch2022graphcon} in a
+query-centered KG reasoning setting.
+
+% TODO: After completing all controlled experiments, add a concise paragraph
+% reporting the evaluated datasets, improvement over the strongest comparable
+% baseline, evidence from the decoupled-transition ablation, and the
+% accuracy--efficiency trade-off.
 
 The main contributions of this paper are summarized as follows:
 \begin{itemize}
-\item We propose STM-GNN, a graph neural reasoning framework for multi-hop
-knowledge graph reasoning, which enhances existing query-centered propagation
-from the perspectives of sheaf semantic transport and momentum state evolution.
-\item We design a query-aware sheaf transport mechanism with semantic
-consistency regularization to model local semantic discrepancy across
-heterogeneous relational edges and alleviate semantic drift in multi-hop
-propagation.
-\item We introduce momentum-based state evolution with dynamic smoothness
-regularization and query-aware node selection to stabilize cross-layer reasoning
-dynamics and suppress noisy candidate expansion.
+\item We formulate progressive multi-hop KG reasoning as a coupled evidence
+evolution problem and define a query-conditioned transition that jointly evolves
+transported evidence, propagation support, and depth-wise states.
+\item We introduce query-conditioned diagonal sheaf transport and use the
+resulting transported evidence as the shared variable for relational
+transformation and frontier evolution.
+\item We derive a momentum-coupled state recurrence on the evolving support and
+constrain the unified transition through edge-level transport consistency and
+depth-level continuity.
+% TODO: Add an empirical contribution after the complete evaluation is verified.
 \end{itemize}
+
+The remainder of this paper is organized as follows. Section~\ref{sec:related_work}
+reviews multi-hop KG reasoning, adaptive propagation, sheaf-based graph learning,
+and neural state dynamics. Section~\ref{sec:preliminaries} introduces the task and
+the coupled evidence evolution problem. Section~\ref{sec:proposed_model} presents
+STM-GNN. Section~\ref{sec:experiments} reports the experimental evaluation and
+analysis, and Section~\ref{sec:conclusion} concludes the paper and outlines
+future research directions.
 
 % Numbered list
 % Use the style of numbering in square brackets.
@@ -286,379 +301,624 @@ dynamics and suppress noisy candidate expansion.
 
 \section{Related Work}\label{sec:related_work}
 
-\subsection{Embedding-, Path-, and Rule-based KG Reasoning}\label{subsec:kg_reasoning}
+\subsection{Knowledge Graph Completion and Multi-hop Reasoning}
+\label{subsec:kg_reasoning}
 
-Knowledge graph reasoning has been widely studied through representation
-learning, path search, and rule learning. Embedding-based methods map entities
-and relations into continuous vector spaces and define scoring functions to
-evaluate candidate triples. Translational models such as TransE represent
-relations as translation operators, bilinear or complex-valued models such as
-ComplEx and RotatE capture more relation patterns, and neural scoring models
-such as ConvE and QuatE further improve expressive power through convolutional
-or hypercomplex operations \citep{bordes2013transe,trouillon2016complex,
-dettmers2018convolutional,sun2019rotate,zhang2019quaternion}. These methods
-are efficient and have become important baselines, but they mainly perform
-implicit triple-level scoring and do not explicitly describe how multi-hop
-evidence is gathered for a given query.
+Knowledge graph completion aims to infer missing facts from observed triples.
+Embedding-based methods assign continuous representations to entities and
+relations and score each candidate triple with a learned compatibility
+function. Representative models include translational, bilinear, convolutional,
+and complex- or quaternion-valued formulations
+\citep{bordes2013transe,trouillon2016complex,dettmers2018convolutional,
+sun2019rotate,zhang2019quaternion}. Geometry-aware extensions further adapt the
+representation space to relational patterns and hierarchical structures
+\citep{wang2023hygge}. These models are effective triple scorers, but the
+multi-step evidence supporting a prediction is encoded implicitly in their
+parameters rather than represented as an explicit reasoning process.
 
-Path- and rule-based methods improve interpretability by modeling explicit
-reasoning chains. DeepPath and MINERVA formulate multi-hop reasoning as
-sequential decision making over relational paths, while Neural LP, DRUM, and
-RNNLogic learn differentiable or probabilistic logical rules from observed
-facts \citep{xiong2017deeppath,das2018minerva,yang2017neurallp,
-sadeghian2019drum,qu2020rnnlogic}. Although these methods provide useful
-explanations, they are usually constrained by sparse rewards, search complexity,
-or sequential path structures. Therefore, they are less flexible when the
-supporting evidence forms a query-dependent local graph rather than a single
-path or a small set of logical compositions.
+Multi-hop methods expose more of this process through paths or rules. DeepPath
+and MINERVA formulate reasoning as sequential decision making over relational
+paths \citep{xiong2017deeppath,das2018minerva}, while Neural LP, DRUM, and
+RNNLogic learn differentiable or probabilistic compositions of relations
+\citep{yang2017neurallp,sadeghian2019drum,qu2020rnnlogic}. More recent path-based
+systems improve action selection with attentive path information or local
+semantic context \citep{shang2024attention,wang2025losa}. Although these methods
+produce interpretable trajectories or rules, their coverage is bounded by the
+paths explored during search or by the learned rule inventory. Graph-based
+reasoners instead aggregate distributed evidence from multiple paths within a
+shared computation. Unlike triple-scoring methods and single-path reasoners,
+STM-GNN operates on a query-dependent propagation support and integrates
+evidence from multiple reachable structures. Its closest competitors therefore
+belong to the progressive and adaptive GNN line reviewed next.
 
-\subsection{GNN-based Multi-hop KG Reasoning}\label{subsec:gnn_for_kg}
+\subsection{Query-Conditioned Progressive and Adaptive Propagation}
+\label{subsec:gnn_for_kg}
 
-Graph neural networks provide a natural framework for modeling local evidence
-through message passing. Following the general message passing neural network
-paradigm \citep{gilmer2017neural}, R-GCN and CompGCN extend graph convolution
-to multi-relational KGs by aggregating relation-aware neighbor information
-\citep{schlichtkrull2018modeling,vashishth2019composition}. Such full
-propagation methods can exploit graph structure, but they tend to aggregate many
-query-irrelevant neighbors and may suffer from high memory cost or
-over-smoothing when the propagation depth increases. To avoid unrestricted
-full-graph aggregation, subgraph-based methods learn from local enclosing
-subgraphs or pair-specific structures, with GraIL being a representative
-inductive relation prediction model \citep{teru2020grail}. However, explicitly
-extracting different subgraphs for many candidate pairs can be expensive on
-large KGs.
+Relation-aware GNNs provide a general mechanism for encoding multi-relational
+neighborhoods. R-GCN uses relation-specific transformations, and CompGCN jointly
+composes entity and relation representations during message passing
+\citep{schlichtkrull2018modeling,vashishth2019composition}. GraIL extracts an
+enclosing subgraph for each entity pair and performs relation-aware aggregation
+over that fixed subgraph \citep{teru2020grail}. Neighborhood-aware models also
+combine graph self-attention with pre-training to enhance local structural
+representations \citep{wu2023neighborhood}. These architectures demonstrate the
+value of relational neighborhoods, but their forward computation is conducted
+on a predefined full graph or an independently constructed pair-specific
+subgraph rather than on a support that evolves with the reasoning depth.
 
-Another important line is query-centered or adaptive propagation. NBFNet
-formulates link prediction as generalized Bellman-Ford propagation, while
-RED-GNN recursively expands query-centered neighborhoods and aggregates
-relation-aware evidence with query-dependent attention
-\citep{zhu2021neural,zhang2022knowledge}. To improve scalability, DPMPN learns
-input-dependent subgraphs through dynamic pruning, and AdaProp learns adaptive
-propagation paths to filter irrelevant entities while preserving promising
-targets \citep{xu2019dpmpn,zhang2022adaprop}. DiffusionE further advances this
-direction by reformulating propagation as a diffusion process and introducing
-semantic-dependent message flow \citep{cao2024diffusione}. These studies show
-that query-centered and adaptive propagation can better balance effectiveness
-and efficiency than full-neighborhood aggregation. Different from these methods
-that mainly focus on propagation range, pruning, or attention-based aggregation,
-STM-GNN emphasizes how semantic evidence is transported across heterogeneous
-relational edges and how reasoning states evolve stably across layers.
+Progressive GNN reasoners align neural propagation with the increasing length of
+relational paths. NBFNet generalizes the Bellman--Ford algorithm by learning the
+operators used to aggregate path representations, whereas RED-GNN recursively
+constructs query-centered relational digraphs and propagates over newly reached
+entities \citep{zhu2021neural,zhang2022knowledge}. DiffusionE further formulates
+knowledge propagation as an anisotropic diffusion process to regulate semantic
+message flow \citep{cao2024diffusione}. By exposing layer-wise reachable
+structures, these methods make multi-path aggregation more explicit than
+triple-level scoring. Nevertheless, exhaustive expansion may admit many weakly
+relevant entities and edges as the propagation radius increases.
 
-\subsection{Sheaf-based Propagation and Momentum State Evolution}\label{subsec:sheaf_momentum_related}
+Adaptive methods address this issue by controlling the propagation support.
+DPMPN learns an input-dependent subgraph through attentive message flow,
+AdaProp incrementally samples involved entities from a query-aware distribution,
+and A*Net prioritizes promising nodes and edges to balance reasoning coverage
+and computation \citep{xu2019dpmpn,zhang2022adaprop,zhu2023astarnet}. TAGNet
+instead restricts message passing to a distance-based window, reducing empty and
+redundant propagation without repeatedly activating the entire reachable region
+\citep{shomer2023distance}, while multi-layer Top-$p$ message passing dynamically
+retains high-probability entities to control propagation cost
+\citep{liu2025topp}. These studies establish that query-dependent support
+selection is central to efficient KG reasoning. For the closest adaptive
+selectors, however, routing is primarily determined by scalar attention,
+sampling probabilities, or priority scores; structurally constrained methods
+impose a separate propagation schedule. The selected messages are then consumed
+by a conventional hidden-state update.
 
-Sheaf-based graph neural networks provide a flexible way to move beyond fixed
-message passing. Neural sheaf diffusion associates graph edges with local
-transport maps and shows that such maps can model non-trivial information flow
-between adjacent feature spaces \citep{bodnar2022neural}. Sheaf neural networks
-with connection Laplacians further study sheaf construction from a geometric
-perspective and use connection-based maps to align neighboring spaces
-\citep{barbero2022sheaf}. These studies provide useful tools for local
-transport, but they mainly focus on general graph learning tasks and do not
-explicitly consider query-conditioned relation semantics in knowledge graph
-reasoning. STM-GNN adapts the sheaf transport idea to multi-hop KG reasoning by
-learning query-aware source-target transport coefficients for relational edges.
+STM-GNN is distinguished not by adaptive propagation alone. It constructs a
+vector-valued transported evidence variable through relation--query-conditioned
+restriction maps. The same variable determines which edges and entities enter
+the next frontier and drives the subsequent hidden--momentum transition. This
+shared evidence interface couples support evolution with state evolution rather
+than treating routing and representation updating as independently
+parameterized operations.
 
-Stable state evolution is another relevant issue for deep or multi-step graph
-propagation. Momentum residual neural networks show that momentum-style state
-updates can stabilize neural representation evolution, and Graph-Coupled
-Oscillator Networks model GNN propagation with second-order dynamic systems
-\citep{sander2021momentum,rusch2022graphcon}. However, these models are not
-designed for KG reasoning, where state evolution is affected by
-query-dependent expansion and noisy relational paths. STM-GNN introduces an
-explicit momentum state for each candidate entity and combines it with dynamic
-smoothness regularization to stabilize multi-hop evidence accumulation.
+\subsection{Sheaf-Based Relational Transport}\label{subsec:sheaf_related}
 
-\section{Preliminaries}\label{sec:methodology}
+Cellular sheaves enrich a graph by assigning vector spaces to cells and linear
+restriction maps to their incidences, thereby representing how information must
+be transformed before it can be compared across adjacent locations. Neural
+Sheaf Diffusion learns such maps and diffusion operators to improve information
+flow on heterophilic graphs \citep{bodnar2022neural}. Connection-based sheaf
+networks study structured restriction maps and their associated Laplacians,
+providing expressive alternatives to scalar edge weights while controlling the
+cost of general matrix-valued maps \citep{barbero2022sheaf}. Both lines perform
+diffusion on a fixed input graph and primarily target graph representation
+learning rather than query-conditioned multi-hop reasoning.
 
-\subsection{Problem Formulation}\label{subsec:problem_definition}
+Knowledge Sheaves connects the sheaf formalism directly to KGs by interpreting
+embedding models as approximate global sections constrained by schema-induced
+local consistency \citep{gebhart2023knowledge}. Its objective is to characterize
+and learn globally compatible KG embeddings. In contrast, STM-GNN constructs
+relation--query-conditioned diagonal restrictions on a dynamically expanded
+local graph for each reasoning query. The resulting transported edge evidence
+is not only an intermediate compatibility signal: it also controls structural
+routing and depth-wise state evolution. Thus, the sheaf component serves as a
+query-specific transport mechanism inside progressive inference rather than as
+a static embedding constraint or a fixed-graph diffusion operator.
 
-Given a knowledge graph $\mathcal{G} = (\mathcal{V}, \mathcal{R}, \mathcal{E})$
-and a query $(s, r_q, ?)$, the goal is to rank all candidate entities and infer
-the target entity $o$ that best matches the source entity $s$ under query
-relation $r_q$. Let $e_v$ and $e_r$ denote the embeddings of entity $v$ and
-relation $r$, respectively. Let $h_v^{(l)}$ denote the hidden state of entity
-$v$ at layer $l$. The final reasoning score should assign higher values to
-correct target entities than to incorrect ones under the given query condition.
+\subsection{Depth-Wise State Dynamics on Graphs}
+\label{subsec:state_dynamics_related}
 
-Different from full-graph propagation methods, query-centered multi-hop
-reasoning expands evidence layer by layer from the source entity instead of
-aggregating over the whole graph at once. In this setting, inference is
-performed on dynamically expanded local neighborhoods, which makes the
-propagation process more targeted and scalable for KG reasoning.
+Recurrent units preserve information through learned hidden-state transitions,
+and gated graph neural networks apply this principle to iterative message
+passing \citep{cho2014learning,li2016gated}. Such updates describe a first-order
+depth recurrence in which the next representation depends on the current state
+and aggregated messages. Momentum ResNets introduce an explicit momentum
+variable and interpret the resulting update as a second-order dynamical system
+\citep{sander2021momentum}. GraphCON similarly derives graph-coupled oscillator
+dynamics for deep graph learning \citep{rusch2022graphcon}. These dynamical
+models improve information preservation across depth, but their state variables
+are defined over a fixed set of graph nodes.
 
-\subsection{Progressive Multi-hop Reasoning}\label{subsec:overall_framework}
+Progressive KG reasoners face a different setting: the computational domain
+changes as new entities enter the active frontier. Existing progressive and
+adaptive models accommodate this structural growth but typically update entity
+representations with first-order recurrent or feed-forward transitions
+\citep{zhang2022knowledge,zhang2022adaprop}. STM-GNN bridges these two settings
+by coupling a second-order hidden--momentum evolution with an evolving support.
+Historical hidden and momentum states are zero-extended to newly activated
+entities, and the retained transported evidence supplies the input to the next
+state transition. This construction makes support growth and memory evolution
+parts of the same depth-wise reasoning process.
 
-Progressive multi-hop reasoning has been widely adopted in recent GNN-based KG
-reasoning models, where propagation starts from the query entity and gradually
-expands the reachable reasoning frontier
-\citep{zhu2021neural,zhang2022knowledge,cao2024diffusione}. In this paper,
-$\mathcal{V}^{(l)}$ denotes the active reasoning frontier at layer $l$,
-$\mathcal{E}^{(l)}$ denotes the set of edges expanded from the previous
-frontier, and $\mathcal{V}_{\mathrm{cand}}^{(l)}$ denotes the candidate nodes
-reached by these expanded edges.
+\section{Preliminaries and Problem Formulation}\label{sec:preliminaries}
 
-For each query $(s, r_q, ?)$, the initial active node set contains only the
-source entity:
+This section separates the reasoning task from its STM-GNN realization. We
+first define the observable graph and evaluation setting, then formalize the
+evolving propagation support, introduce the sheaf transport primitive, and
+finally state the shared-evidence transition to be learned.
+
+\subsection{Task Definition and Evaluation Setting}
+\label{subsec:problem_definition}
+
+Let
+$\mathcal{G}_{\mathrm{obs}}=(\mathcal{V},\mathcal{R},
+\mathcal{E}_{\mathrm{obs}})$ denote the graph observable to a reasoner, where
+$\mathcal{V}$ and $\mathcal{R}$ are the entity and relation sets and
+$\mathcal{E}_{\mathrm{obs}}\subseteq
+\mathcal{V}\times\mathcal{R}\times\mathcal{V}$ is the set of observable
+facts. We consider transductive link prediction, in which the entity and
+relation vocabularies are shared across training, validation, and test queries.
+Given a tail-prediction query $q=(s,r_q,?)$, the model computes a score
+$F_\theta(v\mid q,\mathcal{G}_{\mathrm{obs}})$ for every
+$v\in\mathcal{V}$. Let $\mathcal{E}^{+}$ denote the set of known positive
+facts. The correct answer set of $q$ is
 \begin{equation}
-\mathcal{V}^{(0)} = \{s\}.
+\mathcal{Y}_{q}
+=
+\{v\in\mathcal{V}\mid(s,r_q,v)\in\mathcal{E}^{+}\}.
 \end{equation}
-At layer $l$, the model expands one hop from the current active node set and
-collects the corresponding edge set
+
+The learning objective is to rank members of $\mathcal{Y}_{q}$ ahead of all
+incorrect entities. Head prediction is converted to tail prediction through an
+inverse query $(o,r_q^{-1},?)$. We adopt the standard filtered protocol
+\citep{bordes2013transe}: when one correct answer is ranked, the other known
+answers in $\mathcal{Y}_{q}$ are removed from its competitor set. Importantly,
+the model scores the full entity set rather than a preselected candidate list.
+
+\subsection{Augmented Graph and Progressive Support}
+\label{subsec:augmented_graph}
+
+Progressive reasoning expands a query-dependent support over observable facts.
+To permit propagation in either direction and retain historical entities across
+adjacent depths, we introduce
 \begin{equation}
-\mathcal{E}^{(l)} = \{(u,r,v)\in\mathcal{E}\mid u\in \mathcal{V}^{(l-1)}\},
+\mathcal{R}^{-1}=\{r^{-1}\mid r\in\mathcal{R}\},
+\qquad
+\mathcal{E}_{\mathrm{obs}}^{-1}
+=
+\{(v,r^{-1},u)\mid(u,r,v)\in\mathcal{E}_{\mathrm{obs}}\}.
 \end{equation}
-which induces the candidate node set
+The augmented relation and edge sets are
 \begin{equation}
-\mathcal{V}_{\mathrm{cand}}^{(l)} = \{v \mid (u,r,v)\in\mathcal{E}^{(l)}\}.
+\widetilde{\mathcal{R}}
+=
+\mathcal{R}\cup\mathcal{R}^{-1}\cup\{r_{\mathrm{id}}\},
 \end{equation}
-This progressive expansion strategy describes a general query-centered
-reasoning carrier rather than a complete model by itself. It differs from
-methods that explicitly pre-extract fixed enclosing subgraphs for each entity
-pair: the active frontier is expanded dynamically from the query source during
-inference. The carrier specifies where evidence can be propagated, but it does
-not determine how relation evidence should be transported across edges, how
-expanded candidates should be retained, or how node states should evolve across
-layers.
+\begin{equation}
+\widetilde{\mathcal{E}}_{\mathrm{obs}}
+=
+\mathcal{E}_{\mathrm{obs}}\cup\mathcal{E}_{\mathrm{obs}}^{-1}
+\cup\{(v,r_{\mathrm{id}},v):v\in\mathcal{V}\},
+\end{equation}
+where $r_{\mathrm{id}}$ is the identity relation. We write the resulting graph
+as
+$\widetilde{\mathcal{G}}_{\mathrm{obs}}
+=(\mathcal{V},\widetilde{\mathcal{R}},
+\widetilde{\mathcal{E}}_{\mathrm{obs}})$. Identity edges provide a structural
+channel through which an already active entity can remain represented at the
+next depth.
 
-Compared with conventional relation-aware GNN pipelines
-\citep{schlichtkrull2018modeling,vashishth2019composition}, this backbone keeps
-the reasoning process focused on a layer-wise expanding frontier around the
-query source. Therefore, the model can preserve local reasoning signals while
-avoiding unnecessary global aggregation. However, as the frontier expands, noisy
-neighbors and wrong relational paths may also be introduced, making semantic
-transport and state evolution crucial for reliable multi-hop inference.
+Let $\mathcal{A}_{q}^{(l)}$ denote the active entity set after depth $l$ for
+query $q$. We omit the query subscript below for readability. Starting from
+\begin{equation}
+\mathcal{A}^{(0)}=\{s\},
+\end{equation}
+one-hop expansion at depth $l$ produces
+\begin{equation}
+\mathcal{E}_{\mathrm{exp}}^{(l)}
+=
+\{(u,r,v)\in\widetilde{\mathcal{E}}_{\mathrm{obs}}
+\mid u\in\mathcal{A}^{(l-1)}\},
+\end{equation}
+\begin{equation}
+\mathcal{C}^{(l)}
+=
+\{v\mid (u,r,v)\in\mathcal{E}_{\mathrm{exp}}^{(l)}\},
+\end{equation}
+and the newly reached entities are
+\begin{equation}
+\mathcal{N}^{(l)}
+=
+\mathcal{C}^{(l)}\setminus\mathcal{A}^{(l-1)}.
+\end{equation}
+Following progressive and adaptive GNN reasoners
+\citep{zhu2021neural,zhang2022knowledge,zhang2022adaprop}, the next support must
+satisfy
+\begin{equation}
+\mathcal{A}^{(l-1)}
+\subseteq
+\mathcal{A}^{(l)}
+\subseteq
+\mathcal{C}^{(l)},
+\qquad
+\left|\mathcal{A}^{(l)}\setminus\mathcal{A}^{(l-1)}\right|
+\leq k,
+\label{eq:support_constraints}
+\end{equation}
+where $k$ is the maximum number of newly admitted entities per query and depth.
+Thus, historical entities retain their depth trajectories, whereas newly
+reached entities compete for a bounded propagation budget.
 
-\subsection{Sheaf Transport and Momentum State}\label{subsec:prelim_sheaf_momentum}
+\subsection{Sheaf-Based Relational Transport}\label{subsec:sheaf_preliminaries}
 
-The progressive reasoning paradigm defines where messages are propagated, while
-the quality of reasoning also depends on how messages are transported and how
-node states evolve across layers. In standard relation-aware message passing,
-edge information is usually composed with source-node representations in a
-shared feature space. However, recent neural sheaf diffusion studies suggest
-that graph propagation can be made more flexible by associating edges with local
-transport maps between adjacent feature spaces
-\citep{bodnar2022neural,barbero2022sheaf}. This view motivates us to treat each
-relation edge as a query-conditioned transport channel, so that source-side
-evidence can be locally aligned before being aggregated at the target side.
+A cellular sheaf assigns a vector space, called a stalk, to each graph cell and
+a linear restriction map to every incidence between cells
+\citep{hansen2019spectral,bodnar2022neural}. For a relational edge
+$e=(u,r,v)$, let $\mathcal{F}(u)$, $\mathcal{F}(v)$, and $\mathcal{F}(e)$
+denote the stalks associated with its endpoints and the edge, and let
+$R_{u\rightarrow e}:\mathcal{F}(u)\rightarrow\mathcal{F}(e)$ and
+$R_{v\rightarrow e}:\mathcal{F}(v)\rightarrow\mathcal{F}(e)$ be the endpoint
+restriction maps. In general, these maps need not be square or invertible.
+When the three stalks have the same dimension and $R_{v\rightarrow e}$ is
+invertible, however, an endpoint-to-endpoint transport can be induced as
+\begin{equation}
+T_{u\rightarrow v\mid e}
+=
+R_{v\rightarrow e}^{-1}R_{u\rightarrow e}.
+\label{eq:generic_sheaf_transport}
+\end{equation}
+This operator first maps a source vector into the common edge stalk and then
+expresses it in the target coordinates. It therefore provides a principled
+primitive for transforming relational evidence before aggregation. STM-GNN
+instantiates this transport with query-conditioned, depth-specific diagonal
+restriction maps, yielding a scalable coordinate-wise operator for relational
+evidence alignment on the evolving support.
 
-Another issue concerns the stability of state evolution. In multi-layer
-reasoning, current messages may contain noise and may overwrite useful evidence
-accumulated in previous layers. Recent studies on momentum-style neural
-architectures and second-order dynamic graph models suggest that state evolution
-can be stabilized by preserving a smoothed historical trace
-\citep{sander2021momentum,rusch2022graphcon}. Inspired by these ideas, we
-introduce an explicit momentum state $m_v^{(l)}$ for each entity to record a
-smoothed trace of historical propagation signals. The next section instantiates
-these two ideas as sheaf-conditioned relation propagation and momentum state
-evolution within a unified KG reasoning framework.
+\subsection{Coupled Evolving-Support Reasoning}\label{subsec:coupled_problem}
 
-\section{STM-GNN: Sheaf-Transport and Momentum Graph Neural Reasoning}\label{sec:proposed_model}
+Progressive reasoning must make two interdependent decisions at every depth:
+which newly reached entities are sufficiently relevant to enter the bounded
+support, and how the entity states should evolve on that new domain. Let
+$X^{(l)}\in\mathbb{R}^{|\mathcal{A}^{(l)}|\times d}$ denote a generic
+query-conditioned state with
+$\operatorname{dom}(X^{(l)})=\mathcal{A}^{(l)}$, and let
+$\mathcal{Z}^{(l)}=\{z_e^{(l)}:e\in
+\mathcal{E}_{\mathrm{exp}}^{(l)}\}$ be the edge-level evidence produced at
+depth $l$. We seek a transition of the form
+\begin{equation}
+\begin{aligned}
+\mathcal{Z}^{(l)}
+&=\Psi_q^{(l)}
+\left(X^{(l-1)},\mathcal{E}_{\mathrm{exp}}^{(l)}\right),\\
+\mathcal{A}^{(l)}
+&=\mathfrak{R}_q^{(l)}
+\left(\mathcal{A}^{(l-1)},\mathcal{N}^{(l)},
+\mathcal{Z}^{(l)};k\right),\\
+X^{(l)}
+&=\mathfrak{U}_q^{(l)}
+\left(X^{(l-1)},\mathcal{A}^{(l)},\mathcal{Z}^{(l)}\right),
+\end{aligned}
+\label{eq:coupled_transition_problem}
+\end{equation}
+subject to Eq.~\eqref{eq:support_constraints}. Here, $\Psi_q^{(l)}$ constructs
+edge evidence, $\mathfrak{R}_q^{(l)}$ evolves the support, and
+$\mathfrak{U}_q^{(l)}$ updates the states. The coupling requirement is that both
+support evolution and state evolution are functions of the same
+$\mathcal{Z}^{(l)}$, rather than outputs of independently parameterized routing
+and updating representations. Learning these transitions together with an
+all-entity readout defines the coupled evolving-support reasoning problem. The
+next section instantiates $\mathcal{Z}^{(l)}$ by query-conditioned sheaf
+transport and instantiates $X^{(l)}$ by hidden--momentum states.
 
-\subsection{Overall Framework}\label{subsec:stm_overview}
+\section{STM-GNN: Query-Conditioned Evidence Dynamics}\label{sec:proposed_model}
 
-STM-GNN follows the progressive reasoning carrier introduced in
-Section~\ref{subsec:overall_framework}, but modifies the layer-wise inference
-process from direct aggregation to a preview-retain-update procedure. Given a
-query $(s,r_q,?)$, the model initializes the active frontier
-$\mathcal{V}^{(0)}=\{s\}$, the hidden states, and the momentum states. At layer
-$l$, it first expands one-hop edges from the current frontier to obtain
-$\mathcal{E}^{(l)}$ and $\mathcal{V}_{\mathrm{cand}}^{(l)}$. Different from
-conventional progressive reasoners that directly aggregate all expanded edge
-messages, STM-GNN first computes sheaf-conditioned transported messages on the
-expanded edges and preview-aggregates them to candidate nodes. This preview
-evidence is combined with the query relation to estimate candidate quality, and
-query-guided frontier retention keeps informative nodes as the active frontier
-for subsequent propagation. In implementation, this retention step is realized
-by a top-$k$ operation over candidate scores.
+\subsection{Framework Overview}\label{subsec:stm_overview}
 
-After the frontier is retained, STM-GNN recomputes and aggregates the messages
-on the retained edges to obtain the current update signal. Instead of updating
-hidden states with a recurrent gate, the model maintains an explicit momentum
-state that stores a smoothed historical propagation trace and injects it into
-the hidden state through a residual update. After $L$ layers, the final readout
-concatenates the hidden state and the momentum state to score candidate
-entities. Therefore, the overall inference process can be summarized as
-frontier expansion, sheaf-conditioned evidence preview, query-guided frontier
-retention, momentum-based state update, and final entity scoring.
+STM-GNN instantiates the shared-evidence transition in
+Eq.~\eqref{eq:coupled_transition_problem} with
+$\mathcal{Z}^{(l)}=\mathcal{M}^{(l)}$ and
+$X^{(l)}=(H^{(l)},M^{(l)})$. Each STM transition begins with deterministic
+one-hop expansion and subsequently applies three learned operators:
+query-conditioned sheaf transport, evidence-induced support evolution, and
+momentum-coupled state evolution. The term \emph{coupled} is essential. The
+transport operator produces edge evidence $\mu_e^{(l)}$; preview aggregation of
+the same evidence determines the next active set $\mathcal{A}^{(l)}$; and the
+retained evidence drives the new hidden and momentum states. The updated hidden
+state then conditions transport at the next layer, thereby closing the
+transition.
 
-\begin{figure}[t]
+More formally, after obtaining $\mathcal{E}_{\mathrm{exp}}^{(l)}$ and
+$\mathcal{N}^{(l)}$, STM-GNN computes an edge-evidence collection
+$\mathcal{M}^{(l)}=\{\mu_e^{(l)}\}$ and applies
+\begin{equation}
+\begin{aligned}
+\mathcal{M}^{(l)}
+&=\mathfrak{S}_{q}^{(l)}
+\left(H^{(l-1)},\mathcal{E}_{\mathrm{exp}}^{(l)}\right),\\
+\mathcal{A}^{(l)}
+&=\mathfrak{R}_{q}^{(l)}
+\left(\mathcal{A}^{(l-1)},\mathcal{N}^{(l)},
+\mathcal{M}^{(l)};k\right),\\
+\left(H^{(l)},M^{(l)}\right)
+&=\mathfrak{D}_{q}^{(l)}
+\left(H^{(l-1)},M^{(l-1)},
+\mathcal{A}^{(l)},\mathcal{M}^{(l)}\right),
+\end{aligned}
+\label{eq:stm_decomposition}
+\end{equation}
+where $\mathfrak{S}_{q}^{(l)}$, $\mathfrak{R}_{q}^{(l)}$, and
+$\mathfrak{D}_{q}^{(l)}$ denote the sheaf transport, support evolution, and
+depth evolution operators, respectively. Their composition constitutes one STM
+transition, rather than three independently attached modules.
+
+After $L$ transitions, STM-GNN concatenates each entity's hidden and momentum
+states and produces all-entity link-prediction scores. Fig.~\ref{fig:overall_framework}
+summarizes this closed process; the following subsections define its operators
+in execution order.
+
+\begin{figure}[pos=htbp]
 \centering
 \fbox{\parbox{0.92\linewidth}{
 \centering
 \vspace{1.2cm}
-\textbf{Figure placeholder: Overall framework of STM-GNN}\\
+\textbf{Figure placeholder: Coupled evidence dynamics in STM-GNN}\\
 \vspace{0.2cm}
-Query $(s,r_q,?)$ $\rightarrow$ frontier expansion $\rightarrow$
-sheaf-conditioned evidence preview $\rightarrow$ query-guided frontier retention
-$\rightarrow$ momentum-based state update $\rightarrow$ final scoring.
+Expanded support $\rightarrow$ sheaf-structured evidence transport $\rightarrow$
+transport-induced frontier evolution $\rightarrow$ momentum-coupled state
+transition $\rightarrow$ the next reasoning depth.
 \vspace{1.2cm}
 }}
-\caption{Overall framework of STM-GNN. This figure should illustrate the
-preview-retain-update procedure within progressive query-centered reasoning.}
+\caption{Overall framework of STM-GNN. One STM transition couples evidence
+transport, propagation-support evolution, and depth-wise state evolution.}
 \label{fig:overall_framework}
 \end{figure}
+\FloatBarrier
 
 \begin{table}[t]
-\caption{Layer-wise inference procedure of STM-GNN.}
+\caption{Query-conditioned evidence transition in STM-GNN.}
 \label{tab:algorithm_stmgnn}
 \centering
 \small
 \begin{tabular}{p{0.95\linewidth}}
 \toprule
-\textbf{Input:} Knowledge graph $\mathcal{G}$, query $(s,r_q,?)$, depth $L$, frontier size $k$.\\
-\textbf{Initialize:} $\mathcal{V}^{(0)}=\{s\}$, hidden states $h^{(0)}$, and momentum states $m^{(0)}$.\\
-\textbf{For} $l=1,\ldots,L$: expand one-hop edges from $\mathcal{V}^{(l-1)}$ to obtain $\mathcal{E}^{(l)}$ and $\mathcal{V}_{\mathrm{cand}}^{(l)}$.\\
-Compute sheaf-conditioned transported messages on expanded edges and preview-aggregate them to candidate nodes.\\
-Score candidates with previewed evidence and the query relation, then retain an informative active frontier $\mathcal{V}^{(l)}$.\\
-Aggregate retained messages, update momentum states, and update hidden states through the residual momentum rule.\\
-\textbf{Output:} Entity scores computed from the final hidden and momentum states.\\
+\textbf{Input:} Observable augmented KG
+$\widetilde{\mathcal{G}}_{\mathrm{obs}}$, query $q=(s,r_q,?)$, depth $L$,
+and routing budget $k$.\\
+\textbf{Initialize:} $\mathcal{A}^{(0)}=\{s\}$ and zero hidden and momentum states.\\
+\textbf{For} $l=1,\ldots,L$: expand $\mathcal{A}^{(l-1)}$ to obtain $\mathcal{E}_{\mathrm{exp}}^{(l)}$ and $\mathcal{N}^{(l)}$.\\
+Transport relation-aware evidence on $\mathcal{E}_{\mathrm{exp}}^{(l)}$ with query-conditioned diagonal restriction maps.\\
+Preview the transported evidence, select a per-query hard Top-$k$ support, and apply its straight-through relaxation during training.\\
+Gate and aggregate the expanded evidence, extend previous states to $\mathcal{A}^{(l)}$, and perform the momentum-coupled state evolution.\\
+\textbf{Output:} All-entity scores from the final hidden and momentum states.\\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsection{Sheaf-Conditioned Relation Propagation}\label{subsec:sheaf_module}
+\subsection{Query-Conditioned Sheaf Transport}\label{subsec:sheaf_module}
 
-Relation-aware message passing is a core mechanism in KG graph neural networks
-\citep{schlichtkrull2018modeling,vashishth2019composition}. However, standard
-relation-aware aggregation usually applies a shared transformation pattern to
-all edges of the same relation type, which is still insufficient when the
-propagation behavior should vary according to the query relation and local
-transport context. To address this issue, we introduce a sheaf-conditioned message
-transport mechanism. The design is inspired by neural sheaf diffusion, where
-restriction maps are used to model non-trivial local transport between adjacent
-feature spaces \citep{bodnar2022neural}. In our setting, these transport maps
-are learned from relation-query interactions and applied directly to the
-edge-wise reasoning process.
-
-For each edge $e=(u,r,v)\in \mathcal{E}^{(l)}$, we first construct a raw
-relation-aware message:
+The first learned operator determines how relational evidence changes before it
+is compared and aggregated at a target entity. For each expanded edge
+$e=(u,r,v)\in\mathcal{E}_{\mathrm{exp}}^{(l)}$, we first compose the source
+state and layer-specific relation embedding:
 \begin{equation}
-x_e^{(l)} = h_u^{(l-1)} + e_r.
+x_e^{(l)}=h_u^{(l-1)}+e_r^{(l)}.
 \end{equation}
-
-To make propagation sensitive to both the edge relation and the query relation,
-we learn source-target sheaf coefficients from relation-query interactions as
+We then generate positive endpoint scales for each incidence role
+$\xi\in\{u,v\}$:
 \begin{equation}
-s_{e,\mathrm{src}}^{(l)} = \psi_{\mathrm{src}}(e_r, e_{r_q}), \quad
-s_{e,\mathrm{tgt}}^{(l)} = \psi_{\mathrm{tgt}}(e_r, e_{r_q}),
+\begin{aligned}
+s_{e,\xi}^{(l)}
+=\operatorname{softplus}\bigl(&
+a_{\xi,\mathrm{rel}}^{(l)}\odot e_r^{(l)}
++a_{\xi,\mathrm{qry}}^{(l)}\odot e_{r_q}^{(l)}\\
+&+a_{\xi,\mathrm{int}}^{(l)}\odot
+\left(e_r^{(l)}\odot e_{r_q}^{(l)}\right)
++b_{\xi}^{(l)}\bigr).
+\end{aligned}
+\label{eq:sheaf_scales}
 \end{equation}
-where $\psi_{\mathrm{src}}$ and $\psi_{\mathrm{tgt}}$ denote learnable
-relation-query interaction functions. In our implementation, they are realized
-by element-wise combinations of edge-relation and query-relation embeddings,
-followed by an element-wise positive activation. We then apply source-target
-sheaf scaling to transform the message:
+Here,
+$a_{\xi,\mathrm{rel}}^{(l)},a_{\xi,\mathrm{qry}}^{(l)},
+a_{\xi,\mathrm{int}}^{(l)},b_{\xi}^{(l)}\in\mathbb{R}^{d}$ are
+layer-specific parameters shared across edges. Relation specificity is supplied
+by $e_r^{(l)}$, query specificity by $e_{r_q}^{(l)}$, and their element-wise
+interaction permits the same edge relation to induce different transports under
+different queries.
+These scales instantiate query-conditioned diagonal restriction maps
 \begin{equation}
-\tilde{x}_e^{(l)} =
-\frac{s_{e,\mathrm{src}}^{(l)}}{s_{e,\mathrm{tgt}}^{(l)} + \varepsilon}
+R_{u\rightarrow e}^{(l)}=\operatorname{Diag}(s_{e,u}^{(l)}),
+\qquad
+R_{v\rightarrow e}^{(l)}=\operatorname{Diag}(s_{e,v}^{(l)}).
+\label{eq:restriction_maps}
+\end{equation}
+The source-to-target transport operator is consequently
+\begin{equation}
+T_e^{(l)}
+=
+\left(R_{v\rightarrow e}^{(l)}+\varepsilon I\right)^{-1}
+R_{u\rightarrow e}^{(l)},
+\label{eq:sheaf_transport}
+\end{equation}
+where $\varepsilon>0$ ensures numerical stability. Because the restrictions are
+diagonal, its action can be computed without constructing dense matrices:
+\begin{equation}
+T_e^{(l)}x_e^{(l)}
+=
+\frac{s_{e,u}^{(l)}}{s_{e,v}^{(l)}+\varepsilon}
 \odot x_e^{(l)}.
 \end{equation}
 
-Finally, query-aware attention is used to weight edge evidence:
+Transport and edge relevance play different roles. $T_e^{(l)}$ determines how
+individual feature coordinates are transformed, whereas a scalar attention
+coefficient determines how strongly the whole edge contributes:
 \begin{equation}
-\alpha_e^{(l)} =
-\sigma \bigl(a^\top \rho(W_s h_u^{(l-1)} + W_r e_r + W_q e_{r_q}) \bigr),
+\alpha_e^{(l)}
+=
+\sigma\!\left(
+w_{\alpha}^{(l)\top}
+\rho\!\left(
+W_h^{(l)}h_u^{(l-1)}
++W_r^{(l)}e_r^{(l)}
++W_q^{(l)}e_{r_q}^{(l)}
+\right)
+\right),
 \end{equation}
 \begin{equation}
-\mu_e^{(l)} = \alpha_e^{(l)} \tilde{x}_e^{(l)},
+\mu_e^{(l)}
+=
+\alpha_e^{(l)}T_e^{(l)}x_e^{(l)}.
+\label{eq:transported_evidence}
 \end{equation}
-where $\rho(\cdot)$ denotes a nonlinear activation function and
-$\alpha_e^{(l)}$ is conditioned on the source-node state, edge relation, and
-query relation. Compared with standard uniform aggregation, this module
-explicitly models local transport alignment and allows the same relation type to
-exhibit different propagation behavior under different queries. In this sense,
-the sheaf-conditioned module serves as a relation-sensitive transport operator
-that bridges the query relation, source-node state, and target-side local
-context. This design is different from conventional edge composition alone,
-because it not only changes what information is propagated, but also changes how
-the information is aligned before aggregation
-\citep{bodnar2022neural}.
+In the implementation, $\rho$ is the ReLU activation, the projection matrices
+map from the hidden dimension $d$ to an attention dimension $a$, and
+$w_{\alpha}^{(l)}\in\mathbb{R}^{a}$. Thus, $T_e^{(l)}$ provides feature-wise
+coordinate transport, while $\alpha_e^{(l)}$ controls edge-level relevance.
+The resulting $\mu_e^{(l)}$ is the common evidence variable used by both
+downstream operators. Bias terms in the attention and routing projections are
+omitted from the equations for readability.
 
-\begin{figure}[t]
+\begin{figure}[pos=htbp]
 \centering
 \fbox{\parbox{0.88\linewidth}{
 \centering
 \vspace{1.0cm}
-\textbf{Figure placeholder: Sheaf-conditioned relation propagation}\\
+\textbf{Figure placeholder: Sheaf-structured evidence transport}\\
 \vspace{0.2cm}
 Source state $h_u^{(l-1)}$ and relation $e_r$ form a raw message.
 The edge relation and query relation produce source/target transport scales,
 which align the message before query-aware attention weighting.
 \vspace{1.0cm}
 }}
-\caption{Illustration of sheaf-conditioned relation propagation. This figure
-should show how relation-query conditioned source and target scales transform an
-edge message before aggregation.}
+\caption{Sheaf-structured evidence transport. Query-conditioned endpoint
+restrictions align relation-aware source evidence before edge-level relevance
+weighting.}
 \label{fig:sheaf_transport}
 \end{figure}
+\FloatBarrier
 
-\subsection{Query-Guided Candidate Frontier Control}\label{subsec:topk_module}
+\subsection{Evidence-Induced Support Evolution}\label{subsec:topk_module}
 
-The transported edge evidence is first preview-aggregated onto candidate nodes:
+The second learned operator uses the transported evidence to determine where the
+next transition will take place. Unlike routing with an independently learned
+node representation, support evolution here is derived directly from the
+evidence in Eq.~\eqref{eq:transported_evidence}. We first preview the incoming
+evidence at every reached entity:
 \begin{equation}
-p_v^{(l)} = \sum_{e:\, t(e)=v} \mu_e^{(l)}.
+p_v^{(l)}
+=
+\sum_{\substack{e\in\mathcal{E}_{\mathrm{exp}}^{(l)}\\t(e)=v}}
+\mu_e^{(l)}.
+\end{equation}
+The query-conditioned routing score is
+\begin{equation}
+g_v^{(l)}
+=
+w_g^{(l)\top}
+\tanh\!\left(W_p^{(l)}p_v^{(l)}+W_{q,g}^{(l)}e_{r_q}^{(l)}\right).
+\end{equation}
+Here, $W_p^{(l)},W_{q,g}^{(l)}\in\mathbb{R}^{d\times d}$ and
+$w_g^{(l)}\in\mathbb{R}^{d}$.
+
+Historical entities remain active through their identity edges, while newly
+reached entities compete independently for each query. Let
+$k_l=\min(k,|\mathcal{N}^{(l)}|)$ denote the effective routing budget at depth
+$l$. The hard support is
+\begin{equation}
+\mathcal{A}^{(l)}
+=
+\mathcal{A}^{(l-1)}
+\cup
+\operatorname{TopK}\!\left(\mathcal{N}^{(l)},g^{(l)},k_l\right).
+\label{eq:active_support}
+\end{equation}
+The corresponding retained edge set is
+\begin{equation}
+\mathcal{E}_{\mathrm{ret}}^{(l)}
+=
+\{e\in\mathcal{E}_{\mathrm{exp}}^{(l)}
+\mid t(e)\in\mathcal{A}^{(l)}\}.
+\label{eq:retained_edges}
+\end{equation}
+When $|\mathcal{N}^{(l)}|\leq k$, all newly reached entities are retained. When
+$|\mathcal{N}^{(l)}|>k$, we make the evidence-induced selection trainable with
+a budget-aware straight-through estimator. Let
+$b_v^{(l)}=\mathbb{I}[v\in\mathcal{A}^{(l)}]$ be the hard routing decision and
+define a temperature-controlled soft allocation over newly reached entities:
+\begin{equation}
+\pi_v^{(l)}
+=
+k_l
+\frac{\exp(g_v^{(l)}/\tau)}
+{\sum_{u\in\mathcal{N}^{(l)}}\exp(g_u^{(l)}/\tau)},
+\qquad v\in\mathcal{N}^{(l)},
+\label{eq:routing_relaxation}
+\end{equation}
+where $\tau>0$ is the routing temperature. The straight-through gate is
+\begin{equation}
+\omega_v^{(l)}
+=
+\operatorname{sg}\!\left(b_v^{(l)}-\pi_v^{(l)}\right)+\pi_v^{(l)},
+\label{eq:routing_gate}
+\end{equation}
+where $\operatorname{sg}(\cdot)$ stops the gradient
+\citep{bengio2013estimating}. Historical entities retain unit gates. The hard
+support governs next-depth expansion, while the straight-through relaxation
+enables end-to-end optimization through the corresponding soft allocation.
+
+\subsection{Momentum-Coupled State Evolution}\label{subsec:momentum_module}
+
+The third learned operator preserves depth-wise evidence history while the state
+domain changes. When $\mathcal{A}^{(l)}$ introduces new entities, we first
+extend historical states to the current active set:
+\begin{equation}
+\bar h_v^{(l-1)}
+=
+\begin{cases}
+h_v^{(l-1)}, & v\in\mathcal{A}^{(l-1)},\\
+\mathbf{0}, & v\in\mathcal{A}^{(l)}\setminus\mathcal{A}^{(l-1)},
+\end{cases}
+\end{equation}
+\begin{equation}
+\bar m_v^{(l-1)}
+=
+\begin{cases}
+m_v^{(l-1)}, & v\in\mathcal{A}^{(l-1)},\\
+\mathbf{0}, & v\in\mathcal{A}^{(l)}\setminus\mathcal{A}^{(l-1)}.
+\end{cases}
+\end{equation}
+The retained transported evidence then produces the layer-wise driving signal
+\begin{equation}
+f_v^{(l)}
+=
+\phi\!\left(
+W_f^{(l)}
+\sum_{\substack{e\in\mathcal{E}_{\mathrm{exp}}^{(l)}\\t(e)=v}}
+\omega_{t(e)}^{(l)}\mu_e^{(l)}
+\right).
+\label{eq:driving_signal}
 \end{equation}
 
-We then combine the previewed candidate evidence with the query relation to
-score candidate nodes:
+STM-GNN then evolves a depth-wise momentum state and a hidden state jointly:
 \begin{equation}
-g_v^{(l)} = w_n^\top \tanh(W_n p_v^{(l)} + W_q e_{r_q}).
-\end{equation}
-Based on these scores, informative candidates are retained to form the next
-active reasoning frontier:
-\begin{equation}
-\mathcal{V}^{(l)} = \mathrm{TopK}(\mathcal{V}_{\mathrm{cand}}^{(l)}, g_v^{(l)}, k).
-\end{equation}
-
-The purpose of this module is to control the layer-wise reasoning frontier
-during multi-hop propagation. Instead of forwarding all expanded nodes to the
-next layer, the model estimates candidate quality from the sheaf-conditioned
-evidence preview and the query relation, and then retains a compact set of
-informative candidates. In this way, the reasoning process remains focused on a
-high-quality local frontier, which improves both precision and computational
-efficiency. This strategy is closely related to recent local look-ahead and
-exploration-control ideas in multi-hop reasoning, where the rationality of the
-next reasoning move depends on whether the candidate region is informative
-enough for subsequent inference \citep{wang2025losa,shang2024attention}. In
-our framework, top-$k$ retention is used only as the concrete implementation of
-candidate-frontier control; the key design is to guide frontier retention with
-the evidence produced by sheaf-conditioned propagation.
-
-\subsection{Momentum State Evolution}\label{subsec:momentum_module}
-
-After candidate-frontier control, the retained messages are aggregated as the
-driving signal for state evolution:
-\begin{equation}
-\bar{\mu}_v^{(l)} = \sum_{e:\, t(e)=v} \mu_e^{(l)},
+m_v^{(l)}
+=
+\gamma\bar m_v^{(l-1)}+(1-\gamma)f_v^{(l)},
+\label{eq:momentum_update}
 \end{equation}
 \begin{equation}
-f_v^{(l)} = \phi(W_f \bar{\mu}_v^{(l)}).
+h_v^{(l)}
+=
+\bar h_v^{(l-1)}+\beta m_v^{(l)},
+\label{eq:hidden_update}
 \end{equation}
-
-We update the momentum state and hidden state by
+where $\gamma\in[0,1)$ controls depth-wise evidence persistence and $\beta>0$
+controls its injection into the hidden state. For an entity active at consecutive
+depths, Eqs.~\eqref{eq:momentum_update}--\eqref{eq:hidden_update} imply
 \begin{equation}
-m_v^{(l)} = \gamma m_v^{(l-1)} + (1-\gamma) f_v^{(l)},
+\begin{aligned}
+h_v^{(l)}
+=\;&h_v^{(l-1)}
++\gamma\left(h_v^{(l-1)}-h_v^{(l-2)}\right)\\
+&+\beta(1-\gamma)f_v^{(l)}.
+\end{aligned}
+\label{eq:second_order_depth}
 \end{equation}
-\begin{equation}
-h_v^{(l)} = h_v^{(l-1)} + \beta m_v^{(l)}.
-\end{equation}
+Equation~\eqref{eq:second_order_depth} exposes the second-order depth structure:
+the next state depends on the previous displacement as well as the current
+driving signal. The momentum state is therefore an internal component of the
+STM transition, rather than a recurrent layer applied after graph propagation.
 
-Here, $\gamma \in [0,1)$ controls how much historical information is preserved,
-and $\beta$ determines the contribution of the momentum state to the current
-hidden state. Different from directly overwriting node states with current-layer
-messages, this update rule smooths cross-layer transitions and reduces the
-instability caused by noisy local updates. As a result, the model can preserve
-useful reasoning evidence over deeper propagation layers. Compared with plain
-layer-wise propagation adopted by many graph-based reasoners
-\citep{schlichtkrull2018modeling,vashishth2019composition},
-the momentum state explicitly accumulates a smoothed temporal trace of previous
-reasoning evidence. This is particularly useful in multi-hop KG reasoning,
-because the current update should often be interpreted together with the
-trajectory of previous local decisions rather than in isolation. Consequently,
-the momentum module plays a complementary role to candidate-frontier control:
-frontier control limits low-quality expansion, while momentum stabilizes the
-state evolution of the retained candidates over depth.
-
-\begin{figure}[t]
+\begin{figure}[pos=htbp]
 \centering
 \fbox{\parbox{0.88\linewidth}{
 \centering
@@ -670,100 +930,222 @@ produce $m_v^{(l)}$, which is injected into $h_v^{(l)}$ through a residual
 state update.
 \vspace{1.0cm}
 }}
-\caption{Illustration of momentum state evolution. This figure should emphasize
-the explicit momentum state and its difference from directly overwriting hidden
-states with current-layer messages.}
+\caption{Momentum-coupled state transition. The retained transported evidence
+drives an explicit second-order recurrence over reasoning depth.}
 \label{fig:momentum_evolution}
 \end{figure}
+\FloatBarrier
 
-\subsection{Optimization Objective}\label{subsec:objective}
+\paragraph{Interpretation and limiting cases.}
+The STM transition contains several standard propagation schemes as limiting
+cases. First, if the source and target restrictions coincide and
+$\varepsilon\rightarrow0$, then $T_e^{(l)}\rightarrow I$, and
+$\mu_e^{(l)}$ reduces to a conventional relation-aware attentive message.
+Second, if $k\geq|\mathcal{N}^{(l)}|$, all newly reached entities are retained,
+so evidence-induced support evolution becomes unpruned progressive propagation.
+Third, setting $\gamma=0$ removes depth-wise momentum persistence and yields the
+first-order residual update
+$h_v^{(l)}=\bar h_v^{(l-1)}+\beta f_v^{(l)}$.
+These limiting cases clarify that evidence transformation, support control, and
+depth dynamics are coordinated degrees of freedom within a single STM
+transition.
 
-After $L$ layers of propagation, the final readout combines the hidden state and
-momentum state:
+\subsection{Prediction and Transition Regularization}\label{subsec:objective}
+
+After $L$ transitions, states are zero-extended from $\mathcal{A}^{(L)}$ to the
+full entity set:
 \begin{equation}
-r_v = [h_v^{(L)} \| m_v^{(L)}].
+\widehat h_v^{(L)}
+=
+\begin{cases}
+h_v^{(L)}, & v\in\mathcal{A}^{(L)},\\
+\mathbf{0}, & v\notin\mathcal{A}^{(L)},
+\end{cases}
+\qquad
+\widehat m_v^{(L)}
+=
+\begin{cases}
+m_v^{(L)}, & v\in\mathcal{A}^{(L)},\\
+\mathbf{0}, & v\notin\mathcal{A}^{(L)}.
+\end{cases}
+\label{eq:full_entity_extension}
 \end{equation}
-The final entity score is then computed by
+The final readout and entity score are
 \begin{equation}
-\mathrm{score}(v \mid s, r_q) = w_o^\top r_v,
+z_v^{(L)}
+=
+[\widehat h_v^{(L)}\|\widehat m_v^{(L)}],
 \end{equation}
-where $r_v$ is the final representation of entity $v$ after progressive
-reasoning. The probability of each candidate entity is computed by
 \begin{equation}
-P(v \mid s, r_q) =
-\frac{\exp(\mathrm{score}(v \mid s, r_q))}
-{\sum_{u \in \mathcal{V}^{(L)}} \exp(\mathrm{score}(u \mid s, r_q))}.
+\operatorname{score}(v\mid q)=w_o^\top z_v^{(L)},
 \end{equation}
-
-Accordingly, the prediction loss is defined as
 \begin{equation}
-\mathcal{L}_{\mathrm{pred}} = - \log P(o \mid s, r_q).
+P(v\mid q)
+=
+\frac{\exp(\operatorname{score}(v\mid q))}
+{\sum_{u\in\mathcal{V}}\exp(\operatorname{score}(u\mid q))}.
+\label{eq:all_entity_probability}
 \end{equation}
-
-To encourage stable local transport and smooth dynamic evolution, we further use
-two auxiliary regularization terms. The sheaf regularization is defined on the
-aligned source-side and target-side transported signals:
+Training queries are instantiated per positive triple. For a mini-batch
+$\mathcal{B}$ of query--answer pairs $(q,o)$, the all-entity prediction loss is
 \begin{equation}
-\mathcal{L}_{\mathrm{sheaf}} =
-\frac{1}{L}\sum_{l=1}^{L}\frac{1}{|\mathcal{E}^{(l)}|}
-\sum_{e\in\mathcal{E}^{(l)}} \alpha_e^{(l)}
-\left\| s_{e,\mathrm{src}}^{(l)} \odot x_e^{(l)} -
-s_{e,\mathrm{tgt}}^{(l)} \odot f_{t(e)}^{(l)} \right\|_2^2,
+\mathcal{L}_{\mathrm{pred}}
+=
+-\frac{1}{|\mathcal{B}|}
+\sum_{(q,o)\in\mathcal{B}}
+\log P(o\mid q).
 \end{equation}
-and the dynamic regularization penalizes abrupt changes in momentum states:
+Other known answers to the same query are handled by the filtered protocol at
+evaluation time, as defined in Section~\ref{subsec:problem_definition}.
+
+The STM transition is further constrained at the edge and depth levels.
+Transport consistency compares the source evidence and the target driving signal
+after both are restricted to the edge stalk:
 \begin{equation}
-\mathcal{L}_{\mathrm{dyn}} =
-\frac{1}{L}\sum_{l=1}^{L}\frac{1}{|\mathcal{V}^{(l)}|}
-\sum_{v\in\mathcal{V}^{(l)}} \left\| m_v^{(l)} - m_v^{(l-1)} \right\|_2^2.
+\mathcal{L}_{\mathrm{tr}}
+=
+\frac{1}{L}\sum_{l=1}^{L}
+\frac{1}{|\mathcal{E}_{\mathrm{ret}}^{(l)}|}
+\sum_{e=(u,r,v)\in\mathcal{E}_{\mathrm{ret}}^{(l)}}
+\alpha_e^{(l)}
+\left\|
+R_{u\rightarrow e}^{(l)}x_e^{(l)}
+-R_{v\rightarrow e}^{(l)}f_v^{(l)}
+\right\|_2^2.
+\label{eq:transport_consistency}
 \end{equation}
-
-The overall training loss can be written as
+Depth continuity penalizes abrupt changes in the momentum trajectory on the
+evolving support:
 \begin{equation}
-\mathcal{L} = \mathcal{L}_{\mathrm{pred}} +
-\lambda_s \mathcal{L}_{\mathrm{sheaf}} +
-\lambda_d \mathcal{L}_{\mathrm{dyn}}.
+\mathcal{L}_{\mathrm{depth}}
+=
+\frac{1}{L}\sum_{l=1}^{L}
+\frac{1}{|\mathcal{A}^{(l)}|}
+\sum_{v\in\mathcal{A}^{(l)}}
+\left\|m_v^{(l)}-\bar m_v^{(l-1)}\right\|_2^2.
+\label{eq:depth_continuity}
 \end{equation}
+The overall objective is
+\begin{equation}
+\mathcal{L}
+=
+\mathcal{L}_{\mathrm{pred}}
++\lambda_{\mathrm{tr}}\mathcal{L}_{\mathrm{tr}}
++\lambda_{\mathrm{depth}}\mathcal{L}_{\mathrm{depth}}.
+\label{eq:overall_objective}
+\end{equation}
+Rather than introducing unrelated auxiliary tasks,
+$\mathcal{L}_{\mathrm{tr}}$ and $\mathcal{L}_{\mathrm{depth}}$ regularize the same
+evidence transition across an edge and across depth, respectively.
 
-Here, $\mathcal{L}_{\mathrm{pred}}$ is the main supervision signal for target
-entity ranking, $\mathcal{L}_{\mathrm{sheaf}}$ regularizes the consistency of
-source-target transport under query-aware alignment, and
-$\mathcal{L}_{\mathrm{dyn}}$ encourages smoother momentum evolution across
-reasoning layers. The joint objective reflects the overall design philosophy of
-STM-GNN: accurate answer prediction should be achieved together with stable
-local transport and robust cross-layer state dynamics.
+\subsection{Computational Characterization}\label{subsec:computational_characterization}
 
-\section{Experiments}\label{sec:experiments}
+Let $B$ be the batch size, $d$ the hidden dimension, $a$ the attention
+dimension, $E_l=|\mathcal{E}_{\mathrm{exp}}^{(l)}|$,
+$C_l=|\mathcal{C}^{(l)}|$, and $A_l=|\mathcal{A}^{(l)}|$, where the set sizes
+are summed over the queries in a batch. At depth $l$, diagonal restriction
+generation and transport require $\mathcal{O}(E_ld)$ operations, attention
+projections require $\mathcal{O}(E_lda)$, candidate and state projections
+require $\mathcal{O}(C_ld^2)$, and partial top-$k$ selection requires
+$\mathcal{O}(C_l\log k)$. Constructing and normalizing the final all-entity
+scores additionally costs $\mathcal{O}(B|\mathcal{V}|d)$. The overall time
+complexity is therefore
+\begin{equation}
+\mathcal{O}\!\left(
+\sum_{l=1}^{L}
+\left(E_lda+C_ld^2+C_l\log k\right)
++B|\mathcal{V}|d
+\right),
+\end{equation}
+where the two uses of transported evidence---previewing candidates and updating
+states---affect only the constant factor of the edge computation. The peak
+activation memory is
+\begin{equation}
+\mathcal{O}\!\left(
+\max_{1\leq l\leq L}
+\left(E_ld+C_ld+A_ld\right)
++B|\mathcal{V}|
+\right).
+\end{equation}
+The resulting computation scales with the explored edges and candidates at each
+depth, while diagonal transport avoids storing edge-specific dense $d\times d$
+transformation matrices.
 
-\subsection{Datasets}\label{subsec:datasets}
+\section{Experiments and Analysis}\label{sec:experiments}
 
-At the current stage, we report completed experimental results on two
-representative KG reasoning benchmarks: UMLS and WN18RR. UMLS is a relatively
-dense biomedical knowledge graph with strong relational regularities, which is
-suitable for evaluating whether the model can capture stable multi-hop reasoning
-patterns. WN18RR is a more sparse and challenging lexical benchmark derived
-from WordNet, and it is widely used to test the generalization ability of KG
-completion models under reduced inverse relation leakage. These two datasets
-provide complementary evaluation scenarios for dense and sparse relational
-reasoning, and they are sufficient to preliminarily examine the robustness of
-the proposed method under different graph characteristics.
+\subsection{Research Questions}\label{subsec:research_questions}
 
-\subsection{Baselines and Evaluation Metrics}\label{subsec:baselines_metrics}
+The evaluation is organized around four research questions. \textbf{RQ1} asks
+whether STM-GNN improves all-entity link prediction across KGs with different
+structural characteristics. \textbf{RQ2} examines whether coupling transport,
+frontier evolution, and momentum recurrence is more effective than optimizing
+the corresponding operations independently. \textbf{RQ3} analyzes whether the
+learned transition produces query-relevant transport, compact propagation
+supports, and continuous depth trajectories. \textbf{RQ4} studies the trade-off
+among predictive performance, routing budget, and computational cost.
 
-Following the comparison setting shown in Table~\ref{tab:main_results}, we
+\subsection{Experimental Settings}\label{subsec:experimental_settings}
+
+\subsubsection{Datasets}\label{subsec:datasets}
+
+We evaluate STM-GNN on five transductive KG reasoning benchmarks: Family,
+UMLS, WN18RR, FB15k-237, and NELL-995. Family contains kinship relations and
+provides a compact setting with regular compositional patterns. UMLS is a dense
+biomedical KG whose relatively small entity set is connected by diverse semantic
+relations. WN18RR is a lexical benchmark derived from WordNet with inverse
+relation leakage removed. FB15k-237 contains heterogeneous real-world relations
+from Freebase, whereas NELL-995 provides a substantially larger and sparser
+entity space. Together, the five datasets cover small regular graphs, dense
+domain graphs, lexical hierarchies, heterogeneous relations, and large sparse
+graphs. We use the transductive splits and preprocessing protocol associated
+with RED-GNN \citep{zhang2022knowledge}. Dataset statistics are summarized in
+Table~\ref{tab:dataset_statistics}.
+
+\begin{table}[t]
+\caption{Statistics of the five transductive knowledge graph benchmarks. The
+fact and training columns report the files used by the progressive reasoning
+protocol before epoch-wise repartitioning.}
+\label{tab:dataset_statistics}
+\centering
+\small
+\setlength{\tabcolsep}{4.0pt}
+\begin{tabular}{lrrrrrr}
+\toprule
+Dataset & Entities & Relations & Facts & Train & Valid & Test \\
+\midrule
+Family      & 3,007  & 12  & 17,615  & 5,868  & 2,038  & 2,835 \\
+UMLS        & 135    & 46  & 4,006   & 1,321  & 569    & 633 \\
+WN18RR      & 40,943 & 11  & 65,130  & 21,705 & 3,034  & 3,134 \\
+FB15k-237   & 14,541 & 237 & 204,087 & 68,028 & 17,535 & 20,466 \\
+NELL-995    & 74,536 & 200 & 112,258 & 37,420 & 543    & 2,818 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Baselines and Evaluation Metrics}\label{subsec:baselines_metrics}
+
+Following the comparison setting shown in
+Tables~\ref{tab:main_results_small} and~\ref{tab:main_results_large}, we
 consider three groups of baselines: triple-based models, path-based models, and
 GNN-based models. The triple-based baselines include ConvE, RotatE, and QuatE;
 the path-based baselines include MINERVA, Neural LP, DRUM, and RNNLogic; and
-the GNN-based baselines include pLogicNet, CompGCN, DMPNN, and RED-GNN. These
-methods cover representative paradigms from local triple scoring, differentiable
-rule or path reasoning, and query-guided graph propagation
+the graph-based baselines include pLogicNet, CompGCN, DPMPN, NBFNet, RED-GNN,
+AdaProp, A*Net, TAGNet, and DiffusionE. The latter group is particularly
+important because it includes full-graph propagation, progressive propagation,
+learned routing, and efficiency-oriented path selection. These methods cover
+representative paradigms from local triple scoring, differentiable rule or path
+reasoning, and query-guided graph propagation
 \citep{dettmers2018convolutional,sun2019rotate,yang2017neurallp,
-sadeghian2019drum,qu2020rnnlogic,vashishth2019composition,zhang2022knowledge}.
+sadeghian2019drum,qu2020rnnlogic,qu2019probabilistic,zhang2019quaternion,
+das2018minerva,
+vashishth2019composition,xu2019dpmpn,zhu2021neural,zhang2022knowledge,
+zhang2022adaprop,zhu2023astarnet,shomer2023distance,cao2024diffusione}.
 
-Since the current draft focuses on the two datasets that have already been fully
-completed, we report our results on UMLS and WN18RR and compare them with the
-corresponding baseline results reported in prior work under the same
-transductive setting. This presentation is appropriate for the current draft and
-can be further extended after the remaining datasets are finished.
+We compare all methods under the transductive setting. A baseline result is used
+only when its dataset split, filtered evaluation protocol, and prediction
+direction match the present setting. The final tables will distinguish values
+reproduced with official implementations from values reported by the original
+papers; unavailable or unfinished results are denoted by ``--''.
 
 Following common practice in KG completion, we use Mean Reciprocal Rank (MRR),
 Hits@1, and Hits@10 as the main evaluation metrics. MRR measures the average
@@ -771,149 +1153,272 @@ reciprocal rank of the correct answer, while Hits@k measures the proportion of
 queries for which the correct entity appears in the top-$k$ predictions. Higher
 values of these metrics indicate better reasoning performance.
 
-\subsection{Implementation Details}\label{subsec:implementation}
+\subsubsection{Implementation Details}\label{subsec:implementation}
 
 The model is trained with a validation-driven tuning protocol. Hyperparameters
-such as hidden dimension, number of reasoning layers, retained frontier size,
-momentum coefficient $\gamma$, residual coefficient $\beta$, and loss weights
-$\lambda_s$ and $\lambda_d$ are selected according to validation MRR. We use the
-Adam optimizer with early stopping, and the best checkpoint is chosen according
-to filtered validation performance. For fair comparison, all models are
-evaluated under the same filtered ranking setting. In the current draft, the
-detailed numerical settings can be filled in after the final hyperparameter
-search is completed. The reported scores of the proposed model are obtained
-from our current implementation, while the baseline numbers in the comparison
-table are taken from the existing comparison setting used in prior work. This
-allows us to present a complete and honest draft-level experimental comparison
-before all additional reruns are finished.
+such as hidden dimension, reasoning depth, retained frontier size, routing
+temperature, momentum coefficient $\gamma$, residual coefficient $\beta$, and
+loss weights $\lambda_{\mathrm{tr}}$ and $\lambda_{\mathrm{depth}}$ are selected
+according to validation MRR. For each dataset, the fact and training pools are
+repartitioned using the dataset-specific fact ratio, following the progressive
+reasoning protocol used by RED-GNN. We use Adam optimization and early stopping,
+save the checkpoint with the highest filtered validation MRR, and evaluate the
+test set only after model selection. Final STM-GNN results will be reported as
+the mean and standard deviation over five independent random seeds. All methods
+are evaluated using filtered ranking in both prediction directions. Dropout is
+applied to the layer-wise driving signal, with the activation function and
+dropout rate selected according to validation MRR.
+% TODO: Synchronize checkpointing and test-only final evaluation with the code.
+% TODO: Add hardware, software versions, search ranges, final hyperparameters,
+% fact ratios, early-stopping patience, and the five random seeds.
 
-\subsection{Main Results}\label{subsec:main_results}
+\subsection{Overall Performance}\label{subsec:main_results}
 
 \begin{table}[t]
-\caption{Comparison with representative baselines on the test sets of UMLS and WN18RR.}
-\label{tab:main_results}
+\caption{Filtered link-prediction results on Family and UMLS. Entries without
+verified protocol-compatible results are retained as placeholders. Best and
+second-best formatting will be added after all controlled runs are complete.}
+\label{tab:main_results_small}
 \centering
-\small
-\setlength{\tabcolsep}{4.5pt}
+\scriptsize
+\setlength{\tabcolsep}{3.0pt}
 \renewcommand{\arraystretch}{1.08}
-\begin{tabular}{c|l|ccc|ccc}
+\begin{tabular}{clcccccc}
 \toprule
-\multirow{2}{*}{Type} & \multirow{2}{*}{Models} & \multicolumn{3}{c|}{UMLS} & \multicolumn{3}{c}{WN18RR} \\
+\multirow{2}{*}{Type} & \multirow{2}{*}{Model} & \multicolumn{3}{c}{Family} & \multicolumn{3}{c}{UMLS} \\
 \cmidrule(lr){3-5}\cmidrule(lr){6-8}
- &  & MRR & Hit@1 & Hit@10 & MRR & Hit@1 & Hit@10 \\
+ & & MRR & Hits@1 & Hits@10 & MRR & Hits@1 & Hits@10 \\
 \midrule
-triple & ConvE & 0.940 & 0.920 & 0.960 & 0.430 & 0.390 & 0.490 \\
- & RotatE & 0.925 & 0.863 & 0.993 & 0.477 & 0.428 & 0.571 \\
- & QuatE & 0.944 & 0.905 & 0.993 & 0.480 & 0.440 & 0.551 \\
+Triple & ConvE & -- & -- & -- & 0.940 & 0.920 & 0.960 \\
+ & RotatE & -- & -- & -- & 0.925 & 0.863 & 0.993 \\
+ & QuatE & -- & -- & -- & 0.944 & 0.905 & 0.993 \\
 \midrule
-path & MINERVA & 0.825 & 0.728 & 0.968 & 0.448 & 0.413 & 0.513 \\
- & Neural LP & 0.745 & 0.627 & 0.918 & 0.435 & 0.371 & 0.566 \\
- & DRUM & 0.813 & 0.674 & 0.976 & 0.486 & 0.425 & 0.586 \\
- & RNNLogic & 0.842 & 0.772 & 0.965 & 0.483 & 0.446 & 0.558 \\
+Path & MINERVA & -- & -- & -- & 0.825 & 0.728 & 0.968 \\
+ & Neural LP & -- & -- & -- & 0.745 & 0.627 & 0.918 \\
+ & DRUM & -- & -- & -- & 0.813 & 0.674 & 0.976 \\
+ & RNNLogic & -- & -- & -- & 0.842 & 0.772 & 0.965 \\
 \midrule
-GNN & pLogicNet & 0.842 & 0.772 & 0.965 & 0.441 & 0.398 & 0.537 \\
- & CompGCN & 0.927 & 0.867 & 0.994 & 0.479 & 0.443 & 0.546 \\
- & DMPNN & 0.930 & 0.899 & 0.982 & 0.482 & 0.444 & 0.558 \\
- & RED-GNN & 0.964 & 0.946 & 0.990 & 0.533 & 0.485 & 0.624 \\
- & STM-GNN & \textbf{0.978} & \textbf{0.966} & \textbf{0.995} & \textbf{0.552} & \textbf{0.503} & \textbf{0.645} \\
+Graph & pLogicNet & -- & -- & -- & 0.842 & 0.772 & 0.965 \\
+ & CompGCN & -- & -- & -- & 0.927 & 0.867 & 0.994 \\
+ & DPMPN & -- & -- & -- & 0.930 & 0.899 & 0.982 \\
+ & NBFNet & -- & -- & -- & -- & -- & -- \\
+ & RED-GNN & -- & -- & -- & 0.964 & 0.946 & 0.990 \\
+ & AdaProp & -- & -- & -- & -- & -- & -- \\
+ & A*Net & -- & -- & -- & -- & -- & -- \\
+ & TAGNet & -- & -- & -- & -- & -- & -- \\
+ & DiffusionE & -- & -- & -- & -- & -- & -- \\
+\midrule
+ & STM-GNN & -- & -- & -- & 0.978 & 0.966 & 0.995 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Table~\ref{tab:main_results} reports the current performance of the proposed
-model on the datasets that have already been completed. On UMLS, STM-GNN
-achieves the best performance on all three metrics, improving over the strongest
-GNN baseline RED-GNN from 0.964 to 0.978 in MRR and from 0.946 to 0.966 in
-Hit@1. On WN18RR, the proposed model also obtains the best results, increasing
-MRR from 0.533 to 0.552 and Hit@10 from 0.624 to 0.645 compared with RED-GNN.
-These observations suggest that the proposed combination of sheaf-conditioned
-propagation, query-guided frontier retention, and momentum evolution is
-especially effective for progressive query-centered reasoning on both dense and
-sparse knowledge graphs.
+\begin{table}[t]
+\caption{Filtered link-prediction results on WN18RR, FB15k-237, and NELL-995.
+FB15k-237 and NELL-995 experiments are pending. Reported WN18RR values will be
+checked against their original protocols before final submission.}
+\label{tab:main_results_large}
+\centering
+\scriptsize
+\setlength{\tabcolsep}{1.7pt}
+\renewcommand{\arraystretch}{1.06}
+\begin{tabular}{clccccccccc}
+\toprule
+\multirow{2}{*}{Type} & \multirow{2}{*}{Model}
+& \multicolumn{3}{c}{WN18RR}
+& \multicolumn{3}{c}{FB15k-237}
+& \multicolumn{3}{c}{NELL-995} \\
+\cmidrule(lr){3-5}\cmidrule(lr){6-8}\cmidrule(lr){9-11}
+& & MRR & H@1 & H@10 & MRR & H@1 & H@10 & MRR & H@1 & H@10 \\
+\midrule
+Triple & ConvE & 0.430 & 0.390 & 0.490 & -- & -- & -- & -- & -- & -- \\
+ & RotatE & 0.477 & 0.428 & 0.571 & -- & -- & -- & -- & -- & -- \\
+ & QuatE & 0.480 & 0.440 & 0.551 & -- & -- & -- & -- & -- & -- \\
+\midrule
+Path & MINERVA & 0.448 & 0.413 & 0.513 & -- & -- & -- & -- & -- & -- \\
+ & Neural LP & 0.435 & 0.371 & 0.566 & -- & -- & -- & -- & -- & -- \\
+ & DRUM & 0.486 & 0.425 & 0.586 & -- & -- & -- & -- & -- & -- \\
+ & RNNLogic & 0.483 & 0.446 & 0.558 & -- & -- & -- & -- & -- & -- \\
+\midrule
+Graph & pLogicNet & 0.441 & 0.398 & 0.537 & -- & -- & -- & -- & -- & -- \\
+ & CompGCN & 0.479 & 0.443 & 0.546 & -- & -- & -- & -- & -- & -- \\
+ & DPMPN & 0.482 & 0.444 & 0.558 & -- & -- & -- & -- & -- & -- \\
+ & NBFNet & 0.551 & 0.497 & 0.666 & -- & -- & -- & -- & -- & -- \\
+ & RED-GNN & 0.533 & 0.485 & 0.624 & -- & -- & -- & -- & -- & -- \\
+ & AdaProp & 0.553 & 0.502 & 0.652 & -- & -- & -- & -- & -- & -- \\
+ & A*Net & 0.549 & 0.495 & 0.659 & -- & -- & -- & -- & -- & -- \\
+ & TAGNet & 0.565 & 0.513 & 0.667 & -- & -- & -- & -- & -- & -- \\
+ & DiffusionE & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+\midrule
+ & STM-GNN & 0.552 & 0.503 & 0.645 & -- & -- & -- & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-\subsection{Ablation Study}\label{subsec:ablation}
+Tables~\ref{tab:main_results_small} and~\ref{tab:main_results_large} organize the
+five-dataset comparison required by RQ1. After all controlled runs are complete,
+the analysis will report absolute and relative gains over the strongest
+protocol-compatible baseline, variation across random seeds, and performance
+across regular, dense, heterogeneous, and large sparse graphs. The controlled
+analyses below will further separate the contributions of individual operators
+from the effect of coupling them through a shared evidence interface.
 
-To evaluate the contribution of each component, we consider several ablation
-variants: removing sheaf-conditioned propagation, disabling query-guided
-frontier retention, and replacing momentum state evolution with a standard
-direct state update. We expect each ablation to degrade performance for a
-different reason. Without sheaf-conditioned propagation, message transmission
-becomes less adaptive to local relation-query compatibility. Without
-query-guided frontier retention, noisy candidates are more likely to enter
-deeper reasoning layers. Without momentum evolution, hidden states become more
-sensitive to layer-wise fluctuations and may lose useful historical evidence.
-These ablations help verify that evidence transport, frontier retention, and
-state evolution play complementary roles in the overall framework.
+\subsection{Component and Coupling Analysis}\label{subsec:ablation}
+
+To answer RQ2, we compare the complete STM transition with controlled variants
+that change one operator while preserving the same reasoning depth, hidden
+dimension, and, where applicable, routing budget. Identity transport tests the
+value of sheaf-structured coordinate alignment. To isolate the value of coupling
+rather than individual model capacity, the decoupled evidence interface uses
+independently parameterized evidence representations for support routing and
+state evolution under the same propagation budget. Random top-$k$ routing
+controls for the computational budget without learned selection, unrestricted
+propagation removes the routing constraint, and setting $\gamma=0$ reduces the
+state evolution to a first-order update. Finally, the two consistency losses are
+removed separately.
 
 \begin{table}[t]
-\caption{Ablation study of STM-GNN components. The numerical results will be
-filled after all ablation runs are completed.}
+\caption{Component and coupling analysis measured by MRR on all five datasets.
+Detailed Hits@1 and Hits@10 results will be included in the supplementary
+material. All numerical entries are placeholders for controlled runs.}
 \label{tab:ablation}
 \centering
 \small
-\begin{tabular}{l|ccc|ccc}
+\begin{tabular}{lccccc}
 \toprule
-\multirow{2}{*}{Variant} & \multicolumn{3}{c|}{UMLS} & \multicolumn{3}{c}{WN18RR} \\
-\cmidrule(lr){2-4}\cmidrule(lr){5-7}
- & MRR & Hit@1 & Hit@10 & MRR & Hit@1 & Hit@10 \\
+Variant & Family & UMLS & WN18RR & FB15k-237 & NELL-995 \\
 \midrule
-Full STM-GNN & -- & -- & -- & -- & -- & -- \\
-w/o sheaf-conditioned propagation & -- & -- & -- & -- & -- & -- \\
-w/o query-guided frontier retention & -- & -- & -- & -- & -- & -- \\
-w/o momentum state evolution & -- & -- & -- & -- & -- & -- \\
-w/o auxiliary regularization & -- & -- & -- & -- & -- & -- \\
+Full STM-GNN & -- & -- & -- & -- & -- \\
+Identity transport & -- & -- & -- & -- & -- \\
+Decoupled evidence interface & -- & -- & -- & -- & -- \\
+Random top-$k$ routing & -- & -- & -- & -- & -- \\
+Unrestricted propagation & -- & -- & -- & -- & -- \\
+First-order evolution ($\gamma=0$) & -- & -- & -- & -- & -- \\
+w/o $\mathcal{L}_{\mathrm{tr}}$ & -- & -- & -- & -- & -- \\
+w/o $\mathcal{L}_{\mathrm{depth}}$ & -- & -- & -- & -- & -- \\
 \bottomrule
 \end{tabular}
 \end{table}
 
+\subsection{Transition Behavior Analysis}\label{subsec:transition_analysis}
+
+To answer RQ3, we characterize STM transitions through target coverage, support
+compactness, transport selectivity, and depth continuity. For a set of
+query--answer pairs $\mathcal{Q}$, target coverage and the average support ratio
+at depth $l$ are defined as
+\begin{equation}
+\operatorname{Cov}^{(l)}
+=\frac{1}{|\mathcal{Q}|}\sum_{(q,o)\in\mathcal{Q}}
+\mathbb{I}[o\in\mathcal{A}_{q}^{(l)}],
+\qquad
+\operatorname{SR}^{(l)}
+=\frac{1}{|\mathcal{Q}|}\sum_{(q,o)\in\mathcal{Q}}
+\frac{|\mathcal{A}_{q}^{(l)}|}
+{\max\{1,|\mathcal{C}_{q}^{(l)}|\}}.
+\end{equation}
+Edge-level analysis compares relation--query transport scales and transport
+consistency on retained and discarded candidates. Support-level analysis reports
+coverage, active nodes, retained edges, and propagated messages over depth.
+Depth-level analysis compares momentum displacement, adjacent-layer state
+variation, and prediction quality for the complete and first-order variants.
+Together, these diagnostics test whether compact support and smoother depth
+dynamics coincide with preserved answer evidence and improved prediction.
+
+\begin{figure}[pos=htbp]
+\centering
+\fbox{\parbox{0.90\linewidth}{
+\centering
+\vspace{0.9cm}
+\textbf{Figure placeholder: Transition diagnostics}\\
+\vspace{0.2cm}
+(a) target coverage and support ratio over depth;\\
+(b) active nodes, retained edges, and messages over depth;\\
+(c) state variation and MRR for full and first-order transitions.
+\vspace{0.9cm}
+}}
+\caption{Transition diagnostics at the support and depth levels. The final
+figure will compare STM-GNN with matched-budget and first-order variants.}
+\label{fig:transition_diagnostics}
+\end{figure}
+\FloatBarrier
+
+\subsection{Efficiency and Routing-Budget Analysis}\label{subsec:efficiency_analysis}
+
+To answer RQ4, we evaluate the accuracy--efficiency frontier using MRR,
+propagated messages, inference time, and peak GPU memory under matched hardware
+and evaluation settings. Since different reasoners parameterize their routing
+budgets differently, cross-model comparisons are aligned by the actual number
+of propagated messages per query. STM-GNN is evaluated under multiple routing
+budgets and unrestricted propagation against protocol-compatible,
+efficiency-oriented graph reasoners.
+
+\begin{table}[t]
+\caption{Placeholder for the accuracy--efficiency comparison. Measurements will
+be reported on the same hardware. ``Msg./query'' denotes the average number of
+propagated messages per test query.}
+\label{tab:efficiency}
+\centering
+\scriptsize
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{llrrrrr}
+\toprule
+Dataset & Method & Budget & MRR & Msg./query & Time & Memory \\
+\midrule
+WN18RR & RED-GNN & Full & -- & -- & -- & -- \\
+WN18RR & NBFNet & Full & -- & -- & -- & -- \\
+WN18RR & AdaProp & -- & -- & -- & -- & -- \\
+WN18RR & A*Net & -- & -- & -- & -- & -- \\
+WN18RR & TAGNet & -- & -- & -- & -- & -- \\
+WN18RR & STM-GNN & Full & -- & -- & -- & -- \\
+WN18RR & STM-GNN & -- & -- & -- & -- & -- \\
+FB15k-237 & STM-GNN & -- & -- & -- & -- & -- \\
+NELL-995 & STM-GNN & -- & -- & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[pos=htbp]
+\centering
+\fbox{\parbox{0.90\linewidth}{
+\centering
+\vspace{0.9cm}
+\textbf{Figure placeholder: Routing-budget trade-off}\\
+\vspace{0.2cm}
+Plot MRR, propagated messages, inference time, and peak memory against the
+routing budget on WN18RR, FB15k-237, and NELL-995.
+\vspace{0.9cm}
+}}
+\caption{Accuracy--efficiency trade-off under different routing budgets. The
+unrestricted model and matched-budget baselines will be included as references.}
+\label{fig:routing_budget}
+\end{figure}
+\FloatBarrier
+
 \subsection{Case Study}\label{subsec:case_study}
 
-We further analyze representative reasoning cases by visualizing the local
-reasoning frontier selected during inference. In successful cases, the proposed
-model tends to assign larger attention weights to edges that are semantically
-consistent with the query relation and simultaneously suppress distracting
-branches through query-guided frontier retention. The momentum state also helps
-preserve supporting evidence from previous hops, so that the final prediction is
-not dominated by a single noisy update. Such case studies are useful for
-explaining how evidence transport, frontier retention, and state evolution
-cooperate to produce more robust multi-hop predictions.
+Representative cases will visualize how high-evidence relational structures
+guide frontier evolution and how momentum preserves useful signals across
+reasoning depth. The final analysis will include a successful case and a
+challenging case to illustrate the behavior of STM transitions under different
+structural conditions.
 
-\begin{figure}[t]
+\begin{figure}[pos=htbp]
 \centering
 \fbox{\parbox{0.88\linewidth}{
 \centering
 \vspace{1.0cm}
 \textbf{Figure placeholder: Reasoning case study}\\
 \vspace{0.2cm}
-Visualize a query, the layer-wise retained frontier, high-attention evidence
-edges, and the final predicted answer.
+Visualize a query, the expanded and retained supports, transported edge
+evidence, depth-wise momentum, and the final predicted answer.
 \vspace{1.0cm}
 }}
 \caption{Case study of a representative reasoning process. This figure should
-visualize the retained reasoning frontier and the evidence edges emphasized by
-the model.}
+visualize the evolving propagation support, transported evidence, and final
+prediction.}
 \label{fig:case_study}
 \end{figure}
-
-\subsection{Complexity and Efficiency Analysis}\label{subsec:complexity}
-
-Let $d$ denote the hidden dimension, $L$ the number of reasoning layers,
-$|\mathcal{E}^{(l)}|$ the number of expanded edges at layer $l$, and
-$|\mathcal{V}_{\mathrm{cand}}^{(l)}|$ the number of candidate nodes at layer
-$l$. The dominant cost of one reasoning layer comes from edge-wise message
-transformation and aggregation, which is approximately
-$\mathcal{O}(|\mathcal{E}^{(l)}| d)$, while candidate scoring introduces an
-additional $\mathcal{O}(|\mathcal{V}_{\mathrm{cand}}^{(l)}| d)$ cost. Therefore,
-the total complexity is roughly linear in the number of expanded frontier edges
-across layers. Since query-guided frontier retention limits the number of active
-candidates entering the next layer, the practical inference cost is lower than
-that of unrestricted full-neighborhood propagation.
-
-In the current implementation, the measured running time is about $2110.67$s for
-training and $6.38$s for inference on UMLS, and about $23929.83$s for training
-and $67.53$s for inference on WN18RR. These results indicate that the model
-maintains reasonable efficiency while performing progressive query-centered
-reasoning.
+\FloatBarrier
 
 % Uncomment and use as the case may be
 %\begin{theorem} 
@@ -929,20 +1434,27 @@ reasoning.
 
 \section{Conclusion}\label{sec:conclusion}
 
-This paper presents a query-guided graph neural framework for knowledge graph
-reasoning. By integrating sheaf-conditioned relation propagation, query-guided
-frontier retention, and momentum state evolution, the proposed method improves
-edge-wise evidence transport, candidate quality, and cross-layer reasoning
-stability. The sheaf-conditioned transport mechanism provides flexible local
-edge-wise alignment, frontier retention reduces noisy expansion during
-progressive reasoning, and momentum state evolution stabilizes hidden-state
-updates over multiple hops.
+This paper addresses progressive multi-hop knowledge graph reasoning by
+formulating the reasoning process as query-conditioned evidence dynamics on an
+evolving local graph. STM-GNN realizes this formulation through a coupled STM
+transition: query-conditioned sheaf restrictions transform relation-aware edge
+evidence, the transported evidence induces the active propagation support, and
+the retained evidence drives a momentum-coupled state update. The updated state
+then conditions the transition at the next reasoning depth. In this way,
+evidence transformation, routing, and depth-wise accumulation are coordinated
+through a shared transition rather than modeled as unrelated stages.
 
-Experimental results on benchmark datasets demonstrate the effectiveness of the
-proposed framework, especially on progressive query-centered reasoning tasks.
-Future work will extend the model to larger-scale inductive benchmarks,
-strengthen the interpretability of retained reasoning frontiers, and further
-improve the explanation of multi-hop evidence aggregation.
+% TODO: After all controlled experiments are complete, insert one concise
+% evidence paragraph here. Report only verified findings: overall performance
+% on the five benchmarks, the component-and-coupling ablations, and the measured
+% accuracy--efficiency trade-off. Avoid a state-of-the-art claim unless the
+% protocol-compatible results support it on the stated datasets and metrics.
+
+Future work will extend the coupled evidence transition to inductive reasoning
+over unseen entities and previously unseen graphs.
+% TODO: Mention query- or structure-adaptive routing budgets here only if the
+% completed budget analysis verifies materially different behavior across graph
+% structures.
 
 % To print the credit authorship contribution details
 \printcredits
